@@ -1,1 +1,2 @@
---Inline comment.
+"\n this quote has\
+escapes.\""
