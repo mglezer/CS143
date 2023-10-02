@@ -47,6 +47,9 @@ cool-lex.cc: cool.flex
 dotest:	lexer test.cl
 	./lexer test.cl
 
+test:
+	./run_tests.sh
+
 ${LIBS}:
 	${CLASSDIR}/etc/link-object ${ASSN} $@
 
