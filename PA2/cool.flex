@@ -67,7 +67,7 @@ static void clear_string_state() {
 
 /* Error messages. */
 static char STR_TOO_LONG[] = "String constant too long";
-static char STR_CONTAINS_NULL[] = "String contains null character";
+static char STR_CONTAINS_NULL[] = "String contains null character.";
 static char STR_UNTERMINATED[] = "Unterminated string constant";
 static char STR_CONTAINS_EOF[] = "EOF in string constant";
 static char UNRECOGNIZED_CHAR[] = "Unrecognized character";
@@ -82,11 +82,7 @@ static char COMMENT_UNMATCHED_OPEN[] = "EOF in comment";
 
 DARROW          =>
 
-DISALLOWED_CHARS [\0]
-
-ALLOWED_CHARS [^{DISALLOWED_CHARS}]
-
-MULTILINE_COMMENT "(*"
+LE              "<="
 
 OPEN_COMMENT    "(*"
 
@@ -104,16 +100,126 @@ ESCAPED_CHAR    \\(.|\n)
 
 INTEGER_LITERAL [0-9]+
 
+OBJ_ID          [a-z][a-zA-Z0-9_]*
+
+TYPE_ID         [A-Z][a-zA-Z0-9_]*
+
+ASSIGN          "<-"
+
+CLASS           [cC][lL][aA][sS][sS]   
+INHERITS        [iI][nN][hH][eE][rR][iI][tT][sS]   
+IF              [iI][fF]   
+THEN            [tT][hH][eE][nN]   
+ELSE            [eE][lL][sS][eE]   
+FI              [fF][iI]   
+WHILE           [wW][hH][iI][lL][eE]   
+LOOP            [lL][oO][oO][pP]   
+POOL            [pP][oO][oO][lL]   
+LET             [lL][eE][tT]   
+IN              [iI][nN]   
+CASE            [cC][aA][sS][eE]   
+OF              [oO][fF]   
+ESAC            [eE][sS][aA][cC]   
+NEW             [nN][eE][wW]   
+ISVOID          [iI][sS][vV][oO][iI][dD]   
+NOT             [nN][oO][tT]   
+TRUE            t[r|R][u|U][e|E]
+FALSE           f[a|A][l|L][s|S][e|E]
+
+OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
+
 %x COMMENT_MODE
 
 %x STRING_MODE
 
 %%
 
- /*
-  *  Nested comments
-  */
 
+{TRUE} {
+  cool_yylval.boolean = true;
+  return BOOL_CONST;
+}
+
+{FALSE} {
+  cool_yylval.boolean = false;
+  return BOOL_CONST;
+}
+
+{ASSIGN} {
+  return ASSIGN;
+}
+
+{CLASS} {
+  return CLASS;
+}
+
+{CASE} {
+  return CASE;
+}
+
+{ESAC} {
+  return ESAC;
+}
+
+{IF} {
+  return IF;
+}
+
+{FI} {
+  return FI;
+}
+
+{IN} {
+  return IN;
+}
+
+{INHERITS} {
+  return INHERITS;
+}
+
+{ISVOID} {
+  return ISVOID;
+}
+
+{LET} {
+  return LET;
+}
+
+{WHILE} {
+  return WHILE;
+}
+
+{LOOP} {
+  return LOOP;
+}
+
+{POOL} {
+  return POOL;
+}
+
+{NOT} {
+  return NOT;
+}
+
+{OF} {
+  return OF;
+}
+
+{NEW} {
+  return NEW;
+}
+
+{THEN} {
+  return THEN;
+}
+
+{ELSE} {
+  return ELSE;
+}
+
+{OPERATOR} {
+  return (int)yytext[0];
+}
 
 {WHITE_SPACE} {
   /** Ignore. */
@@ -136,6 +242,17 @@ INTEGER_LITERAL [0-9]+
   /** Ignore. */
 }
 
+{OBJ_ID} {
+  cool_yylval.symbol = stringtable.add_string(yytext);
+  return OBJECTID;
+}
+
+{TYPE_ID} {
+  cool_yylval.symbol = stringtable.add_string(yytext);
+  return TYPEID;
+}
+  
+
 <COMMENT_MODE,INITIAL>{OPEN_COMMENT} {
   comment_depth++;
   BEGIN(COMMENT_MODE);
@@ -157,14 +274,14 @@ INTEGER_LITERAL [0-9]+
   return ERROR;
 }
 
-<<EOF>> {
-  yyterminate();
-}
-
  /*
   *  The multiple-character operators.
   */
 {DARROW}		{ return (DARROW); }
+
+{LE} {
+  return LE;
+}
 
  /*
   * Keywords are case-insensitive except for the values true and false,
@@ -272,7 +389,7 @@ INTEGER_LITERAL [0-9]+
 
 . {
  /* Fallback rule. This should go last. */
-   cool_yylval.error_msg = UNRECOGNIZED_CHAR;
+   cool_yylval.error_msg = yytext;
    return ERROR;
 }
 
