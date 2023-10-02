@@ -34,7 +34,7 @@ extern FILE *fin; /* we read from this file */
 
 char string_buf[MAX_STR_CONST]; /* to assemble strcing constants */
 int string_buf_idx = 0;
-char *string_err_msg = NULL;
+bool string_err = false;
 
 extern int curr_lineno;
 extern int verbose_flag;
@@ -52,16 +52,11 @@ static bool buffer_is_full() {
   return string_buf_idx == MAX_STR_CONST;
 }
 
-static bool set_str_error_msg(char *error_msg) {
-  if (string_err_msg  == NULL) {
-    string_err_msg = error_msg;
-  }
-}
-    
 
 static void clear_string_state() {
+  BEGIN(INITIAL);
   string_buf_idx = 0;
-  string_err_msg = NULL;
+  string_err = false;
 }
 
 
@@ -106,6 +101,10 @@ TYPE_ID         [A-Z][a-zA-Z0-9_]*
 
 ASSIGN          "<-"
 
+ /*
+  * Keywords are case-insensitive except for the values true and false,
+  * which must begin with a lower-case letter.
+  */
 CLASS           [cC][lL][aA][sS][sS]   
 INHERITS        [iI][nN][hH][eE][rR][iI][tT][sS]   
 IF              [iI][fF]   
@@ -134,6 +133,13 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
 
 %%
 
+%{
+/*
+ * Put keywords and operators first so they have the highest precedence.
+ * This should ensure that keywords and operators are never interpreted as
+ * regular identifiers.
+ */
+%}
 
 {TRUE} {
   cool_yylval.boolean = true;
@@ -283,11 +289,10 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
   return LE;
 }
 
- /*
-  * Keywords are case-insensitive except for the values true and false,
-  * which must begin with a lower-case letter.
-  */
-
+{QUOTE} {
+  /* Open quote. */
+  BEGIN(STRING_MODE);
+}
 
  /*
   *  String constants (C syntax)
@@ -296,20 +301,20 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
   *
   */
 
-
-{QUOTE} {
-  /* Open quote. */
-  BEGIN(STRING_MODE);
-}
-
 <STRING_MODE>{ESCAPED_CHAR} {
   if (yytext[1] == '\n') {
     curr_lineno++;
   }
 
-  if (string_err_msg == NULL) {
-    if (buffer_is_full()) {
-      set_str_error_msg(STR_TOO_LONG);
+  if (!string_err) {
+    if (yytext[1] == '\0') {
+      string_err = true;
+      cool_yylval.error_msg = STR_CONTAINS_NULL;
+      return ERROR;
+    } else if (buffer_is_full()) {
+      string_err = true;
+      cool_yylval.error_msg = STR_TOO_LONG;
+      return ERROR;
     } else {
       char c;
       switch (yytext[1]) {
@@ -334,11 +339,15 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
 }
 
 <STRING_MODE>[^\"] {
-  if (string_err_msg == NULL) {
+  if (!string_err) {
     if (yytext[0] == '\0') {
-      set_str_error_msg(STR_CONTAINS_NULL);
+      string_err = true;
+      cool_yylval.error_msg = STR_CONTAINS_NULL;
+      return ERROR;
     } else if (buffer_is_full()) {
-      set_str_error_msg(STR_TOO_LONG);
+      string_err = true;
+      cool_yylval.error_msg = STR_TOO_LONG;
+      return ERROR;
     } else {
       string_buf[string_buf_idx++] = yytext[0];
     }
@@ -347,19 +356,15 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
 
 <STRING_MODE>{QUOTE} {
   /* Close quote. */
-  BEGIN(INITIAL);
-  char *old_string_err_msg = string_err_msg;
-  int old_string_buf_idx = string_buf_idx;
+  bool prev_string_err = string_err;
+  int prev_string_buf_idx = string_buf_idx;
 
   clear_string_state();
 
-  if (old_string_err_msg) {
-    cool_yylval.error_msg = old_string_err_msg;
-    return ERROR;
-  } else {
-    char buffer[old_string_buf_idx + 1];
-    memcpy(buffer, string_buf, old_string_buf_idx);
-    buffer[old_string_buf_idx] = '\0';
+  if (!prev_string_err) {
+    char buffer[prev_string_buf_idx + 1];
+    memcpy(buffer, string_buf, prev_string_buf_idx);
+    buffer[prev_string_buf_idx] = '\0';
     cool_yylval.symbol = stringtable.add_string(buffer);
     return STR_CONST;
   }
@@ -384,7 +389,7 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
 }
 
 <COMMENT_MODE>. {
-  // Ignore.
+  // Ignore the contents of comments.
 }
 
 . {

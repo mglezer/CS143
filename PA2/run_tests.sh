@@ -1,7 +1,7 @@
 #!/bin/bash
 
 errors=false;
-for file in ./*test.cl; do
+for file in tests/*.cl; do
     if [ -f ${file} ]; then
 	output=$(diff <(./lexer $file) <(lexer $file))
 	if [ -n "$output" ]; then
