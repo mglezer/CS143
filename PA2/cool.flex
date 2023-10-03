@@ -49,7 +49,8 @@ extern YYSTYPE cool_yylval;
 static int comment_depth = 0;
 
 static bool buffer_is_full() {
-  return string_buf_idx == MAX_STR_CONST;
+  // The last entry is reserved for the NULL character.
+  return string_buf_idx == MAX_STR_CONST - 1;
 }
 
 
@@ -237,10 +238,13 @@ OPERATOR        "="|"+"|"-"|"*"|"/"|"~"|"<"|"("|")"|";"|"{"|"}"|":"|"."|","|"@"
 
 <STRING_MODE>{NEW_LINE} {
   curr_lineno++;
-  cool_yylval.error_msg = STR_UNTERMINATED;
+  bool prev_string_err = string_err;
   clear_string_state();
   BEGIN(INITIAL);
-  return ERROR;
+  if (!prev_string_err) {
+    cool_yylval.error_msg = STR_UNTERMINATED;
+    return ERROR;
+  }
 }
 
 

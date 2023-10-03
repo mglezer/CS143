@@ -5,3 +5,5 @@ cgen
 parser
 semant
 **/*.s
+grading
+pa1-grading.pl
