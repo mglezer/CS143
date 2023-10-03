@@ -1,3 +1,7 @@
 cool-lex.*
 lexer
 mycoolc
+cgen
+parser
+semant
+**/*.s

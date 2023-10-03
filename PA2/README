@@ -106,3 +106,41 @@ Instructions
 Write-up for PA2
 ----------------
 
+The implementation is pretty simple. We make use of Flex's start conditions to
+conditionally apply certain rules depending on whether we are inside a string
+literal, a (nested) comment, or in regular code.
+
+For regular code, we use the principle of precedence to match keywords before
+identifiers, so keywords are never confused as identifiers, which simplifies the
+rules for identifiers. We do not condition on word boundaries, so for example
+123abc123 will be interpreted as the int literal 123 followed by the object id
+"abc123". We exploit maximal matching so that for example case1234 is
+interpreted as a single object identifier rather than the CASE keyword followed
+by an integer. Whitespace is ignored.  Non-whitespace characters which cannot
+appear in keywords, operators, or identifiers will be caught by a "default"
+rule, which matches the first character of input when no rules have matched.
+
+For nested comments, we use an exclusive start condition to cleanly separate
+rules which should only apply within comments. We enter this start condition (if
+it is not already active) when encountering a "(*". Since comments can can be
+arbitrarily deeply nested, we keep track of the current "depth" of the comment
+using a static global. When the depth is 1 and we encounter a "*)", we exit the
+start condition, causing the lexer to interpret what follows as normal code.
+Everything other than a "(*" or a "*)" when in comment mode is ignored.
+
+For strings, we also use an exclusive start condition to cleanly define rules
+which should only apply within string literals. We enter this start condition
+when encountering an open double quotation mark. In strings, we scan either one
+or two characters at a time, two when encountering an escape character ("\") so
+as to include the escaped character as well. Again maximal matching keeps the
+rule for non-escaped characters simple.  Once any necessary escaping has been
+applied, the character is appended on to a buffer.  If during this process the
+buffer becomes full or we encounter a null character, we return an ERROR token
+so the line number reflects where the error occurred rather than the end of the
+string, and we set an internal flag to indicate that the string is not valid. If
+we encounter an unescaped new line, the string is considered to be terminated
+and invalid and we immeditely exit the start condition. If there have been no
+unescaped new lines, when we encounter another unescaped quote, assuming no
+errors have occurred in scanning the string, we terminate the buffer with a null
+character and copy the contents of the buffer to the string table and also exit
+the start condition so we can scan code normally again.
