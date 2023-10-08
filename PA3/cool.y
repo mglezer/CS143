@@ -141,11 +141,29 @@
     %type <expression> let_statement;
     %type <expressions> expressions_semicolon_separated;
     %type <expressions> expressions_comma_separated;
+    %type <expressions> expressions_comma_separated_or_empty;
     %type <formals> formals;
     %type <formal> formal;
 
     /* Precedence declarations go here. */
 
+    // Note: precedence is in reverse order, so the operator declared last has the
+    // highest precedence.
+
+    // Ensure that IN binds as loosely as possible, otherwise we create ambiguity,
+    // e.g. does z equal 4 or 3 here?
+    //   y: Int <- 3;
+    //   z: Int <- LET y: Int <- 2 IN 1 + y
+    %precedence IN;
+    %right ASSIGN;
+    %precedence NOT;
+    %nonassoc '<' LE '=';
+    %left '+' '-';
+    %left '*' '/';
+    %precedence ISVOID;
+    %precedence '~';
+    %precedence '@';
+    %precedence '.';
 
     %%
     /*
@@ -183,7 +201,6 @@
        };
 
     feature:
-        //TODO(glezer): Flesh out other possible features
         OBJECTID ':' TYPEID {
             $$ = attr($1, $3, no_expr());
         } | OBJECTID ':' TYPEID ASSIGN expression {
@@ -207,11 +224,11 @@
     expression:
         OBJECTID ASSIGN expression {
             $$ = assign($1, $3);
-        } | expression '@' TYPEID '.' OBJECTID '(' expressions_comma_separated ')' {
+        } | expression '@' TYPEID '.' OBJECTID '(' expressions_comma_separated_or_empty ')' {
             $$ = static_dispatch($1, $3, $5, $7);
-        } | expression '.' OBJECTID '(' expressions_comma_separated ')' {
+        } | expression '.' OBJECTID '(' expressions_comma_separated_or_empty ')' {
             $$ = dispatch($1, $3, $5);
-        } | OBJECTID '(' expressions_comma_separated ')' {
+        } | OBJECTID '(' expressions_comma_separated_or_empty ')' {
             $$ = dispatch(object(idtable.add_string("self")), $1, $3);
         } | IF expression THEN expression ELSE expression FI {
             $$ = cond($2, $4, $6);
@@ -264,7 +281,14 @@
             $$ = append_Expressions(single_Expressions($1), $3);
         };
 
-    expressions_comma_separated:
+    expressions_comma_separated_or_empty:
+        /* empty */ {
+            $$ = nil_Expressions();
+        } | expressions_comma_separated {
+            $$ = $1;
+        };
+    
+    expressions_comma_separated: 
         expression {
             $$ = single_Expressions($1);
         } | expression ',' expressions_comma_separated {
