@@ -322,7 +322,6 @@
         } | OBJECTID ':' TYPEID ASSIGN expression ',' let_statement {
             $$ = let($1, $3, $5, $7);
         } | error ',' let_statement {
-            yyerrok;
         } | error IN expression {};
 
     case_list:

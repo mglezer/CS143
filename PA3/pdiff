@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+
+diff <(./myparser $1 2>&1) <(./theirparser $1 2>&1);
