@@ -7,8 +7,20 @@
  *  generates
  *)
 
-(* no error *)
+(* no class-level error *)
 class A {
+    x: Int <- ; --Missing expression
+    z: Int <- 2; --valid
+    y <- 5; --Missing type
+    l: Int <- LET 
+        x: Int, y: Int 
+            <- 4, z <- "abc" IN 42;
+    b: Int <- {
+        class;
+        5 + 6;
+        Random stuff
+        7;
+    }; --last: Int <-
 };
 
 (* error:  b is not a type identifier *)

@@ -125,6 +125,12 @@
     /*  DON'T CHANGE ANYTHING ABOVE THIS LINE, OR YOUR PARSER WONT WORK       */
     /**************************************************************************/
 
+    /* Improve debugging output for semantic types */
+    %printer { fprintf (yyo, "%s", $$->get_string()); } OBJECTID;
+    %printer { fprintf (yyo, "%s", $$->get_string()); } TYPEID;
+    %printer { fprintf (yyo, "%s", $$->get_string()); } STR_CONST;
+    %printer { fprintf (yyo, "%s", $$->get_string()); } INT_CONST;
+
     /* Complete the nonterminal list below, giving a type for the semantic
     value of each non terminal. (See section 3.6 in the bison
     documentation for details). */
@@ -143,6 +149,7 @@
     %type <expressions> expressions_comma_separated;
     %type <expressions> expressions_comma_separated_or_empty;
     %type <formals> formals;
+    %type <formals> formals_or_empty;
     %type <formal> formal;
 
     /* Precedence declarations go here. */
@@ -176,15 +183,16 @@
         class /* single class */ {
             $$ = single_Classes($1);
             parse_results = $$;
-        }
-        | class_list class /* several classes */ {
+        } | class_list class /* several classes */ {
             $$ = append_Classes($1,single_Classes($2));
             parse_results = $$;
         };
 
+
     /* If no parent is specified, the class inherits from the Object class. */
     class:
-        CLASS TYPEID '{' feature_list '}' ';' {
+        CLASS error '{' feature_list '}' ';' {
+        } | CLASS TYPEID '{' feature_list '}' ';' {
             $$ = class_($2,idtable.add_string("Object"),$4, stringtable.add_string(curr_filename));
         }
         | CLASS TYPEID INHERITS TYPEID '{' feature_list '}' ';' {
@@ -195,18 +203,25 @@
     feature_list:
        /* empty */ {
            $$ = nil_Features();
-       }
-       | feature ';' feature_list {
+       } | feature ';' feature_list {
          $$ = append_Features(single_Features($1), $3);
-       };
+       } | error ';' feature_list {
+    };
 
     feature:
         OBJECTID ':' TYPEID {
             $$ = attr($1, $3, no_expr());
         } | OBJECTID ':' TYPEID ASSIGN expression {
             $$ = attr($1, $3, $5);
-        } | OBJECTID '(' formals ')' ':' TYPEID '{' expression '}' {
+        } | OBJECTID '(' formals_or_empty ')' ':' TYPEID '{' expression '}' {
             $$ = method($1, $3, $6, $8);
+        };
+
+    formals_or_empty:
+        /* empty */ {
+            $$ = nil_Formals();
+        } | formals {
+            $$ = $1;
         };
 
     formals:
@@ -279,6 +294,8 @@
             $$ = single_Expressions($1);
         } | expression ';' expressions_semicolon_separated {
             $$ = append_Expressions(single_Expressions($1), $3);
+        } | error ';' expressions_semicolon_separated {
+        } | error ';' {
         };
 
     expressions_comma_separated_or_empty:
@@ -304,7 +321,9 @@
             $$ = let($1, $3, no_expr(), $5);
         } | OBJECTID ':' TYPEID ASSIGN expression ',' let_statement {
             $$ = let($1, $3, $5, $7);
-        };
+        } | error ',' let_statement {
+            yyerrok;
+        } | error IN expression {};
 
     case_list:
         case {
