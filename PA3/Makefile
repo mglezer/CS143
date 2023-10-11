@@ -56,6 +56,9 @@ dotest:	parser good.cl bad.cl
 	@echo "\nRunning parser on bad.cl\n"
 	-./myparser bad.cl
 
+tests: parser
+	./run_tests.sh
+
 ${LIBS}:
 	${CLASSDIR}/etc/link-object ${ASSN} $@
 
