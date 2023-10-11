@@ -15,7 +15,10 @@
   /* Locations */
   #define YYLTYPE int              /* the type of locations */
   #define cool_yylloc curr_lineno  /* use the curr_lineno from the lexer
-  for the location of tokens */
+                                      for the location of tokens */
+  #define YYINITDEPTH 10000        /* Set the initial stack size to a high value to
+                                      support right recursion, which is necessary for
+                                      some language constructs. */
 
     extern int node_lineno;          /* set before constructing a tree node
     to whatever you want the line number
@@ -313,6 +316,13 @@
         };
 
     let_statement:
+        // It seems unavoidable given the AST format used in this
+        // project to use right recursion here; LET is modeled in a nested
+        // structure, where the ancestor LET node corresponds to the
+        // first binding, and the child node corresponds to the remaining
+        // bindings + the IN expression; this is naturally right recursive.
+        // Just in case we will increase the max stack size to support LET
+        // statements with a large number of bindings.
         OBJECTID ':' TYPEID IN expression {
             $$ = let($1, $3, no_expr(), $5);
         } | OBJECTID ':' TYPEID ASSIGN expression IN expression {
