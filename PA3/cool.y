@@ -199,13 +199,12 @@
             $$ = class_($2,$4,$6,stringtable.add_string(curr_filename));
         };
 
-    /* Feature list may be empty, but no empty features in list. */
     feature_list:
        /* empty */ {
-           $$ = nil_Features();
-       } | feature ';' feature_list {
-         $$ = append_Features(single_Features($1), $3);
-       } | error ';' feature_list {
+         $$ = nil_Features();
+       } | feature_list feature ';' {
+         $$ = append_Features($1, single_Features($2));
+       } | feature_list error ';' {
     };
 
     feature:
@@ -227,8 +226,8 @@
     formals:
         formal {
             $$ = single_Formals($1);
-        } | formal ',' formals {
-            $$ = append_Formals(single_Formals($1), $3);
+        } | formals ',' formal {
+            $$ = append_Formals($1, single_Formals($3));
         }
 
     formal:
@@ -290,11 +289,12 @@
         };
 
     expressions_semicolon_separated:
+        /* Empty is not an option here */
         expression ';' {
             $$ = single_Expressions($1);
-        } | expression ';' expressions_semicolon_separated {
-            $$ = append_Expressions(single_Expressions($1), $3);
-        } | error ';' expressions_semicolon_separated {
+        } | expressions_semicolon_separated expression ';' {
+            $$ = append_Expressions($1, single_Expressions($2));
+        } | expressions_semicolon_separated error ';' {
         } | error ';' {
         };
 
@@ -308,8 +308,8 @@
     expressions_comma_separated: 
         expression {
             $$ = single_Expressions($1);
-        } | expression ',' expressions_comma_separated {
-            $$ = append_Expressions(single_Expressions($1), $3);
+        } | expressions_comma_separated ',' expression {
+            $$ = append_Expressions($1, single_Expressions($3));
         };
 
     let_statement:
@@ -327,8 +327,8 @@
     case_list:
         case {
             $$ = single_Cases($1);
-        } | case case_list {
-            $$ = append_Cases(single_Cases($1), $2);
+        } | case_list case {
+            $$ = append_Cases($1, single_Cases($2));
         };
 
     case: OBJECTID ':' TYPEID DARROW expression ';' {
