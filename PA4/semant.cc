@@ -1,5 +1,8 @@
 
 
+#include <map>
+#include <set>
+#include <string>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -87,7 +90,110 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
 
     /* Fill this in */
 
+    std::map<std::string, class__class *> class_by_name;
+
+    // Step 1: Construct an inheritance graph from the defined classes.
+    // The nodes are the key set; the edges are determined by the values.
+    for(int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        // Unfortunately it seems we must cast to the subclass here.
+        class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
+        Symbol parent = cls->get_parent();
+
+        std::string name = std::string(cls->get_name()->get_string());
+        std::string parent_name = std::string(parent->get_string());
+
+        // Step 1b: Make sure no classes inherit from Int, String or Bool.
+        if (parent == Bool || parent == Int || parent == Str) {
+            semant_error(cls) << "Class " << name << " cannot inherit class " << parent_name << "." << endl;
+            return;
+        }
+         
+        // Make sure no class is defined more than once.
+        if (!class_by_name.insert(std::pair(name, cls)).second) {
+            semant_error(cls) << "Class " << name << " was previously defined." << endl;
+            return;
+        }
+    }
+
+    std::map<class__class *, class__class *> graph;
+    for (std::map<std::string, class__class *>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
+        class__class *cls = it->second;
+        if (cls->get_parent() == NULL) {
+            continue;
+        } else {
+            if (cls->get_parent() != Object) {
+                std::string name = cls->get_name()->get_string();
+                std::string parent_name = cls->get_parent()->get_string();
+                std::map<std::string, class__class *>::iterator parent_iterator = class_by_name.find(parent_name);
+                if (parent_iterator == class_by_name.end()) {
+                    semant_error(cls) << "Class " << name << " inherits from an undefined class " << parent_name << "." << endl;
+                }
+                graph.insert(std::pair(cls, parent_iterator->second));
+            }
+        }
+    }
+
+    std::set<class__class *> visited;
+    std::set<class__class *> cycle_nodes;
+
+    for (std::map<class__class *, class__class *>::iterator it = graph.begin(); it != graph.end(); ++it) {
+        class__class *current_class = it->first;
+        if (!visited.insert(current_class).second) {
+            continue;
+        }
+        std::set<class__class*> visiting;
+        visiting.insert(current_class);
+        this->find_cycle_in_subgraph(current_class, graph, visited, visiting, cycle_nodes);
+        visiting.erase(current_class);
+        visited.insert(current_class);
+    }
+
+    if (cycle_nodes.size() > 0) {
+        for (class__class *cls : cycle_nodes) {
+            std::string name = cls->get_name()->get_string() ;
+            semant_error(cls) << "Class " << name << ", or an ancestor of " << name << ", is involved in an inheritance cycle." << endl;
+        }
+        return;
+    }
+
+    if (class_by_name.find("Main") == class_by_name.end()) {
+        semant_error() << "Class Main is not defined." << endl;
+    }
+
+    // Step 3: Traverse the AST rooted at each class and fill in the types.
+
 }
+
+void ClassTable::find_cycle_in_subgraph(
+        class__class *start_node,
+        std::map<class__class*, class__class*> graph,
+        std::set<class__class*> &visited,
+        std::set<class__class*> &visiting,
+        std::set<class__class*> &cycle_nodes) {
+    std::map<class__class*, class__class*>::iterator it = graph.find(start_node);
+    if (it == graph.end()) {
+        return;
+    }
+    class__class* parent = it->second;
+    bool already_visiting = visiting.find(parent) != visiting.end();
+    bool on_known_cycle = cycle_nodes.find(parent) != cycle_nodes.end();
+    if (already_visiting || on_known_cycle) {
+        for (class__class *cls : visiting) {
+            cycle_nodes.insert(cls);
+        }
+        return;
+    }
+    bool already_visited = visited.find(parent) != visited.end();
+    if (already_visited) {
+        // This implies we have reached a part of the graph known to be cycle-free.
+        return;
+    }
+    visiting.insert(parent);
+    find_cycle_in_subgraph(parent, graph, visited, visiting, cycle_nodes);
+    visiting.erase(parent);
+    visited.insert(parent);
+}
+
 
 void ClassTable::install_basic_classes() {
 

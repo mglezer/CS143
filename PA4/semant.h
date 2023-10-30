@@ -25,6 +25,13 @@ private:
   void install_basic_classes();
   ostream& error_stream;
 
+  void find_cycle_in_subgraph(
+          class__class *start_node,
+          std::map<class__class*, class__class*> graph,
+          std::set<class__class*> &visited,
+          std::set<class__class*> &visiting,
+          std::set<class__class*> &cycle_nodes);
+
 public:
   ClassTable(Classes);
   int errors() { return semant_errors; }
