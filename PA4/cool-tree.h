@@ -11,6 +11,11 @@
 
 #include "tree.h"
 #include "cool-tree.handcode.h"
+#include <symtab.h>
+
+class method_class;
+typedef class SymbolTable<Symbol, method_class> MethodTable;
+typedef class SymbolTable<Symbol, Entry> ObjectTable;
 
 
 // define the class for phylum
@@ -77,6 +82,8 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
+   virtual Symbol check_type(void *ptr) { return idtable.add_string("Object"); }
+   virtual Symbol test(MethodTable methodTable) { return idtable.add_string("Object"); }
 
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
@@ -163,6 +170,7 @@ public:
    void dump(ostream& stream, int n);
    Symbol get_name() { return name; }
    Symbol get_parent() { return parent; }
+   Features get_features() { return features; }
 
 #ifdef Class__SHARED_EXTRAS
    Class__SHARED_EXTRAS
@@ -189,6 +197,10 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() { return name; }
+   Formals get_formals() { return formals; }
+   Symbol get_return_type() { return return_type; }
+   Expression get_expression() { return expr; }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -213,6 +225,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() { return name; }
+   Symbol get_type_decl() { return type_decl; }
+   Expression get_expression() { return init; }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -659,6 +674,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -679,6 +695,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -699,6 +716,8 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
+
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -777,6 +796,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS

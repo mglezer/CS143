@@ -1,7 +1,8 @@
 
 
-#include <map>
+#include <list>
 #include <set>
+#include <typeinfo>
 #include <string>
 #include <stdlib.h>
 #include <stdio.h>
@@ -90,11 +91,13 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
 
     /* Fill this in */
 
-    std::map<std::string, class__class *> class_by_name;
-
-    // Step 1: Construct an inheritance graph from the defined classes.
-    // The nodes are the key set; the edges are determined by the values.
-    for(int i = classes->first(); classes->more(i); i = classes->next(i)) {
+    // Create a map of class names to classes for easy lookup, and make sure no classes are defined
+    // multiple times.
+    // 
+    // For convenience, insert Object into the name map.
+    class__class *object_class = new class__class(Object, NULL, nil_Features(), NULL);
+    class_by_name.insert(std::pair("Object", object_class));
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         // Unfortunately it seems we must cast to the subclass here.
         class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
         Symbol parent = cls->get_parent();
@@ -115,7 +118,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         }
     }
 
-    std::map<class__class *, class__class *> graph;
+    // Build the inheritance graph and verify no parent classes are undefined.
     for (std::map<std::string, class__class *>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
         class__class *cls = it->second;
         if (cls->get_parent() == NULL) {
@@ -128,22 +131,25 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
                 if (parent_iterator == class_by_name.end()) {
                     semant_error(cls) << "Class " << name << " inherits from an undefined class " << parent_name << "." << endl;
                 }
-                graph.insert(std::pair(cls, parent_iterator->second));
+                parent_graph.insert(std::pair(cls, parent_iterator->second));
+                child_graph.insert(std::pair(parent_iterator->second, cls));
+            } else {
+                parent_graph.insert(std::pair(cls, object_class));
             }
         }
     }
 
+    // Make sure there are no cycles in the inheritance graph.
     std::set<class__class *> visited;
     std::set<class__class *> cycle_nodes;
-
-    for (std::map<class__class *, class__class *>::iterator it = graph.begin(); it != graph.end(); ++it) {
+    for (std::map<class__class *, class__class *>::iterator it = parent_graph.begin(); it != parent_graph.end(); ++it) {
         class__class *current_class = it->first;
         if (!visited.insert(current_class).second) {
             continue;
         }
         std::set<class__class*> visiting;
         visiting.insert(current_class);
-        this->find_cycle_in_subgraph(current_class, graph, visited, visiting, cycle_nodes);
+        this->find_cycle_in_subgraph(current_class, parent_graph, visited, visiting, cycle_nodes);
         visiting.erase(current_class);
         visited.insert(current_class);
     }
@@ -156,12 +162,162 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         return;
     }
 
-    if (class_by_name.find("Main") == class_by_name.end()) {
+    // Validate that a Main class exists and that it has a main method.
+    std::map<std::string, class__class*>::iterator main_it = class_by_name.find("Main");
+    if (main_it == class_by_name.end()) {
         semant_error() << "Class Main is not defined." << endl;
+        return;
     }
 
-    // Step 3: Traverse the AST rooted at each class and fill in the types.
+    class__class* main_class = main_it->second;
+    Features features = main_class->get_features();
+    bool main_method_found = false;
+    for (int i = features->first(); features->more(i); i = features->next(i)) {
+        Feature_class *feat = features->nth(i);
+        if (typeid(*feat) == typeid(method_class)) {
+            method_class* method = dynamic_cast<method_class *>(feat);
+            if (std::string(method->get_name()->get_string()).compare("main") == 0) {
+                main_method_found = true;
+                break;
+            }
+        }
+    }
+    if (!main_method_found) {
+        semant_error(main_class) << "No 'main' method in class Main." << endl;
+        return;
+    }
 
+
+    // Gather all user-defined classes at the top of the hierarchy (i.e. which inherit directly from
+    // Object). Each child class will inherit the top-level scope of its parent, i.e. its fields and
+    // methods.
+    std::list<class__class *> top_level_classes;
+    for (const auto &pair : parent_graph) {
+        if (pair.second == object_class) {
+            top_level_classes.push_back(pair.first);
+        }
+    }
+    for (const auto &cls : top_level_classes) {
+        type_check_class(cls);
+    }
+}
+
+void ClassTable::type_check_class(class__class *cls) {
+
+    method_table.enterscope();
+    object_table.enterscope();
+    active_class = cls;
+
+
+    // First add all features to the scope.
+    Features features = cls->get_features();
+    for (int i = features->first(); features->more(i); i = features->next(i)) {
+        Feature_class *feat = features->nth(i);
+        if (typeid(*feat) == typeid(attr_class)) {
+            attr_class* attr = dynamic_cast<attr_class *>(feat);
+            Symbol declared_type = attr->get_type_decl();
+            object_table.addid(attr->get_name(), declared_type);
+        } else if (typeid(*feat) == typeid(method_class)) {
+            method_class* method = dynamic_cast<method_class *>(feat);
+            method_table.addid(method->get_name(), method);
+        } else {
+            // Attributes and methods are the only possible children of a class.
+            assert(false);
+        }
+    }
+
+    // Once the class-level scope is initialized, we can evaluate all attribute expressions.
+    for (int i = features->first(); features->more(i); i = features->next(i)) {
+        Feature_class *feat = features->nth(i);
+        if (typeid(*feat) == typeid(attr_class)) {
+            attr_class* attr = dynamic_cast<attr_class *>(feat);
+            Expression expr = attr->get_expression();
+            if (attr->get_expression() != no_expr()) {
+                Symbol declared_type = attr->get_type_decl();
+                Symbol inferred_type = expr->check_type(this);
+                if (inferred_type != declared_type) {
+                    semant_error(cls->get_filename(), feat) << "Inferred type " << inferred_type << " of initialization of attribute " << attr->get_name() << " does not conform to declared type " << declared_type->get_string() << "." << endl;
+                } else {
+                    expr->set_type(declared_type);
+                }
+            }
+        } else if (typeid(*feat) == typeid(method_class)) {
+            method_class* method = dynamic_cast<method_class *>(feat);
+            Expression expr = method->get_expression();
+            if (method->get_expression() != no_expr()) {
+                Symbol declared_type = method->get_return_type();
+                Symbol inferred_type = expr->check_type(this);
+                if (inferred_type != declared_type) {
+                    semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type->get_string() << "." << endl;
+                } else {
+                    expr->set_type(declared_type);
+                }
+            }
+        }
+    }
+
+    for (std::multimap<class__class *, class__class *>::iterator it = child_graph.find(cls); it != child_graph.end(); it++) {
+        type_check_class(it->second);
+    }
+
+    method_table.exitscope();
+    object_table.exitscope();
+}
+
+Symbol object_class::check_type(void *ptr) {
+    ClassTable class_table = *(ClassTableP)ptr;
+    Symbol sym = class_table.lookup_object(this->name);
+    if (sym == NULL) {
+        class_table.semant_error(class_table.get_active_class()->get_filename(), this) << "Undeclared identifier " << this->name->get_string() << "." << endl;
+        return Object;
+    }
+    return sym;
+}
+
+Symbol int_const_class::check_type(void *ptr) {
+   return Int;
+}
+
+Symbol string_const_class::check_type(void *ptr) {
+    return Str;
+}
+
+Symbol bool_const_class::check_type(void *ptr) {
+   return Bool;
+}
+
+Symbol ClassTable::lookup_object(Symbol object) {
+    return object_table.lookup(object);
+}
+
+method_class *ClassTable::lookup_method(Symbol method) {
+    return method_table.lookup(method);
+}
+
+class__class *ClassTable::get_active_class() {
+    return active_class;
+}
+
+bool ClassTable::is_subtype(std::string class_name_b, std::string class_name_a) {
+    std::map<std::string, class__class*>::iterator it_b = class_by_name.find(class_name_b);
+    std::map<std::string, class__class*>::iterator it_a = class_by_name.find(class_name_a);
+    // Both classes should be valid names which exist in the map.
+    assert(it_b != class_by_name.end());
+    assert(it_a != class_by_name.end());
+    class__class* class_b = it_b->second;
+    class__class* class_a = it_a->second;
+
+    class__class* curr = class_b;
+
+    while (curr != NULL) {
+        if (curr == class_b) {
+            return true;
+        }
+        std::map<class__class *, class__class *>::iterator it = parent_graph.find(curr);
+        curr = it == parent_graph.end() ? NULL : it->second;
+    }
+
+    return false;
 }
 
 void ClassTable::find_cycle_in_subgraph(

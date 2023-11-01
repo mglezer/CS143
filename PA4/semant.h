@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <iostream>  
+#include <map>
 #include "cool-tree.h"
 #include "stringtab.h"
 #include "symtab.h"
@@ -24,6 +25,12 @@ private:
   int semant_errors;
   void install_basic_classes();
   ostream& error_stream;
+  std::map<std::string, class__class *> class_by_name;
+  std::map<class__class *, class__class *> parent_graph;
+  std::multimap<class__class *, class__class *> child_graph;
+  MethodTable method_table;
+  ObjectTable object_table;
+  class__class *active_class;
 
   void find_cycle_in_subgraph(
           class__class *start_node,
@@ -32,12 +39,20 @@ private:
           std::set<class__class*> &visiting,
           std::set<class__class*> &cycle_nodes);
 
+  bool is_subtype(std::string clazz_b, std::string clazz_a);
+
+  void type_check_class(class__class *cls);
+  Symbol get_type(Expression expression);
+
 public:
   ClassTable(Classes);
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
+  Symbol lookup_object(Symbol object);
+  method_class *lookup_method(Symbol method);
+  class__class *get_active_class();
 };
 
 
