@@ -3,6 +3,8 @@ class Main inherits Parent {
     x: String <- "abc";
     y: Int <- 5;
     z: Int <- y;
+    m: Main;
+    par: Parent <- m;
     pp: Int <- p;
     main(): Int { 0 };
 };

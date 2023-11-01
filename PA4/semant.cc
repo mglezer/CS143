@@ -94,9 +94,15 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // Create a map of class names to classes for easy lookup, and make sure no classes are defined
     // multiple times.
     // 
-    // For convenience, insert Object into the name map.
+    // For convenience, insert built-in classes into the name map.
     class__class *object_class = new class__class(Object, NULL, nil_Features(), NULL);
+    class__class *string_class = new class__class(Str, NULL, nil_Features(), NULL);
+    class__class *bool_class = new class__class(Bool, NULL, nil_Features(), NULL);
+    class__class *int_class = new class__class(Int, NULL, nil_Features(), NULL);
     class_by_name.insert(std::pair("Object", object_class));
+    class_by_name.insert(std::pair("String", string_class));
+    class_by_name.insert(std::pair("Int", int_class));
+    class_by_name.insert(std::pair("Bool", bool_class));
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         // Unfortunately it seems we must cast to the subclass here.
         class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
@@ -235,10 +241,10 @@ void ClassTable::type_check_class(class__class *cls) {
             if (attr->get_expression() != no_expr()) {
                 Symbol declared_type = attr->get_type_decl();
                 Symbol inferred_type = expr->check_type(this);
-                if (inferred_type != declared_type) {
+                if (!is_subtype(inferred_type->get_string(), declared_type->get_string())) {
                     semant_error(cls->get_filename(), feat) << "Inferred type " << inferred_type << " of initialization of attribute " << attr->get_name() << " does not conform to declared type " << declared_type->get_string() << "." << endl;
                 } else {
-                    expr->set_type(declared_type);
+                    expr->set_type(inferred_type);
                 }
             }
         } else if (typeid(*feat) == typeid(method_class)) {
