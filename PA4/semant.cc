@@ -95,45 +95,40 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // multiple times.
     // 
     // For convenience, insert built-in classes into the name map.
-    class__class *object_class = new class__class(Object, NULL, nil_Features(), NULL);
-    class__class *string_class = new class__class(Str, NULL, nil_Features(), NULL);
-    class__class *bool_class = new class__class(Bool, NULL, nil_Features(), NULL);
-    class__class *int_class = new class__class(Int, NULL, nil_Features(), NULL);
-    class_by_name.insert(std::pair("Object", object_class));
-    class_by_name.insert(std::pair("String", string_class));
-    class_by_name.insert(std::pair("Int", int_class));
-    class_by_name.insert(std::pair("Bool", bool_class));
+    class__class* object_class = new class__class(Object, NULL, nil_Features(), NULL);
+    class_by_name.insert(std::pair(Object, object_class));
+    class_by_name.insert(std::pair(Str, new class__class(Str, NULL, nil_Features(), NULL)));
+    class_by_name.insert(std::pair(Bool, new class__class(Bool, NULL, nil_Features(), NULL)));
+    class_by_name.insert(std::pair(Int, new class__class(Int, NULL, nil_Features(), NULL)));
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         // Unfortunately it seems we must cast to the subclass here.
         class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
         Symbol parent = cls->get_parent();
-
-        std::string name = std::string(cls->get_name()->get_string());
-        std::string parent_name = std::string(parent->get_string());
+        Symbol child = cls->get_name();
 
         // Step 1b: Make sure no classes inherit from Int, String or Bool.
         if (parent == Bool || parent == Int || parent == Str) {
-            semant_error(cls) << "Class " << name << " cannot inherit class " << parent_name << "." << endl;
+            semant_error(cls) << "Class " << child << " cannot inherit class " << parent << "." << endl;
             return;
         }
          
         // Make sure no class is defined more than once.
-        if (!class_by_name.insert(std::pair(name, cls)).second) {
-            semant_error(cls) << "Class " << name << " was previously defined." << endl;
+        if (!class_by_name.insert(std::pair(child, cls)).second) {
+            semant_error(cls) << "Class " << child << " was previously defined." << endl;
             return;
         }
     }
 
     // Build the inheritance graph and verify no parent classes are undefined.
-    for (std::map<std::string, class__class *>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
+    for (std::map<Symbol, class__class *>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
         class__class *cls = it->second;
         if (cls->get_parent() == NULL) {
             continue;
         } else {
             if (cls->get_parent() != Object) {
-                std::string name = cls->get_name()->get_string();
-                std::string parent_name = cls->get_parent()->get_string();
-                std::map<std::string, class__class *>::iterator parent_iterator = class_by_name.find(parent_name);
+                Symbol name = cls->get_name();
+                Symbol parent_name = cls->get_parent();
+                std::map<Symbol, class__class *>::iterator parent_iterator = class_by_name.find(parent_name);
                 if (parent_iterator == class_by_name.end()) {
                     semant_error(cls) << "Class " << name << " inherits from an undefined class " << parent_name << "." << endl;
                 }
@@ -162,14 +157,14 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
 
     if (cycle_nodes.size() > 0) {
         for (class__class *cls : cycle_nodes) {
-            std::string name = cls->get_name()->get_string() ;
+            Symbol name = cls->get_name();
             semant_error(cls) << "Class " << name << ", or an ancestor of " << name << ", is involved in an inheritance cycle." << endl;
         }
         return;
     }
 
     // Validate that a Main class exists and that it has a main method.
-    std::map<std::string, class__class*>::iterator main_it = class_by_name.find("Main");
+    std::map<Symbol, class__class*>::iterator main_it = class_by_name.find(Main);
     if (main_it == class_by_name.end()) {
         semant_error() << "Class Main is not defined." << endl;
         return;
@@ -182,7 +177,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         Feature_class *feat = features->nth(i);
         if (typeid(*feat) == typeid(method_class)) {
             method_class* method = dynamic_cast<method_class *>(feat);
-            if (std::string(method->get_name()->get_string()).compare("main") == 0) {
+            if (method->get_name() == main_meth) {
                 main_method_found = true;
                 break;
             }
@@ -241,8 +236,8 @@ void ClassTable::type_check_class(class__class *cls) {
             if (attr->get_expression() != no_expr()) {
                 Symbol declared_type = attr->get_type_decl();
                 Symbol inferred_type = expr->check_type(this);
-                if (!is_subtype(inferred_type->get_string(), declared_type->get_string())) {
-                    semant_error(cls->get_filename(), feat) << "Inferred type " << inferred_type << " of initialization of attribute " << attr->get_name() << " does not conform to declared type " << declared_type->get_string() << "." << endl;
+                if (!is_subtype(inferred_type, declared_type)) {
+                    semant_error(cls->get_filename(), feat) << "Inferred type " << inferred_type << " of initialization of attribute " << attr->get_name() << " does not conform to declared type " << declared_type << "." << endl;
                 } else {
                     expr->set_type(inferred_type);
                 }
@@ -254,7 +249,7 @@ void ClassTable::type_check_class(class__class *cls) {
                 Symbol declared_type = method->get_return_type();
                 Symbol inferred_type = expr->check_type(this);
                 if (inferred_type != declared_type) {
-                    semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type->get_string() << "." << endl;
+                    semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type << "." << endl;
                 } else {
                     expr->set_type(declared_type);
                 }
@@ -274,7 +269,7 @@ Symbol object_class::check_type(void *ptr) {
     ClassTable class_table = *(ClassTableP)ptr;
     Symbol sym = class_table.lookup_object(this->name);
     if (sym == NULL) {
-        class_table.semant_error(class_table.get_active_class()->get_filename(), this) << "Undeclared identifier " << this->name->get_string() << "." << endl;
+        class_table.semant_error(class_table.get_active_class()->get_filename(), this) << "Undeclared identifier " << this->name << "." << endl;
         return Object;
     }
     return sym;
@@ -304,9 +299,9 @@ class__class *ClassTable::get_active_class() {
     return active_class;
 }
 
-bool ClassTable::is_subtype(std::string class_name_b, std::string class_name_a) {
-    std::map<std::string, class__class*>::iterator it_b = class_by_name.find(class_name_b);
-    std::map<std::string, class__class*>::iterator it_a = class_by_name.find(class_name_a);
+bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
+    std::map<Symbol, class__class*>::iterator it_b = class_by_name.find(class_name_b);
+    std::map<Symbol, class__class*>::iterator it_a = class_by_name.find(class_name_a);
     // Both classes should be valid names which exist in the map.
     assert(it_b != class_by_name.end());
     assert(it_a != class_by_name.end());

@@ -25,7 +25,7 @@ private:
   int semant_errors;
   void install_basic_classes();
   ostream& error_stream;
-  std::map<std::string, class__class *> class_by_name;
+  std::map<Symbol, class__class *> class_by_name;
   std::map<class__class *, class__class *> parent_graph;
   std::multimap<class__class *, class__class *> child_graph;
   MethodTable method_table;
@@ -39,7 +39,7 @@ private:
           std::set<class__class*> &visiting,
           std::set<class__class*> &cycle_nodes);
 
-  bool is_subtype(std::string clazz_b, std::string clazz_a);
+  bool is_subtype(Symbol clazz_b, Symbol clazz_a);
 
   void type_check_class(class__class *cls);
   Symbol get_type(Expression expression);
