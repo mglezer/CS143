@@ -2,8 +2,12 @@
 class Main inherits Parent {
     x: String <- "abc";
     y: Int <- 5;
-    z: Int <- y;
+    z: Object <- y;
+    zz: Int <- z;
+    zzz: Main <- par;
     m: Main;
+    obj: Object <- y;
+    obj2: Object <- par;
     par: Parent <- m;
     pp: Int <- p;
     main(): Int { 0 };

@@ -96,10 +96,29 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // 
     // For convenience, insert built-in classes into the name map.
     class__class* object_class = new class__class(Object, NULL, nil_Features(), NULL);
+    class__class *string_class = new class__class(Str, NULL, nil_Features(), NULL);
+    class__class *bool_class = new class__class(Bool, NULL, nil_Features(), NULL);
+    class__class *int_class = new class__class(Int, NULL, nil_Features(), NULL);
+    class__class *io_class = new class__class(IO, NULL, nil_Features(), NULL);
     class_by_name.insert(std::pair(Object, object_class));
-    class_by_name.insert(std::pair(Str, new class__class(Str, NULL, nil_Features(), NULL)));
-    class_by_name.insert(std::pair(Bool, new class__class(Bool, NULL, nil_Features(), NULL)));
-    class_by_name.insert(std::pair(Int, new class__class(Int, NULL, nil_Features(), NULL)));
+    class_by_name.insert(std::pair(Str, string_class));
+    class_by_name.insert(std::pair(Bool, bool_class));
+    class_by_name.insert(std::pair(Int, int_class));
+    class_by_name.insert(std::pair(IO, io_class));
+    parent_graph.insert(std::pair(string_class, object_class));
+    parent_graph.insert(std::pair(bool_class, object_class));
+    parent_graph.insert(std::pair(int_class, object_class));
+    parent_graph.insert(std::pair(io_class, object_class));
+    child_graph.insert(std::pair(object_class, string_class));
+    child_graph.insert(std::pair(object_class, bool_class));
+    child_graph.insert(std::pair(object_class, int_class));
+    child_graph.insert(std::pair(object_class, io_class));
+    built_in_classes.insert(Object);
+    built_in_classes.insert(Str);
+    built_in_classes.insert(Bool);
+    built_in_classes.insert(Int);
+    built_in_classes.insert(IO);
+
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         // Unfortunately it seems we must cast to the subclass here.
         class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
@@ -194,7 +213,9 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // methods.
     std::list<class__class *> top_level_classes;
     for (const auto &pair : parent_graph) {
-        if (pair.second == object_class) {
+        bool is_user_defined = built_in_classes.find(pair.first->get_name()) == built_in_classes.end();
+        bool inherits_from_object = pair.second == object_class;
+        if (inherits_from_object && is_user_defined) {
             top_level_classes.push_back(pair.first);
         }
     }
@@ -204,11 +225,9 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
 }
 
 void ClassTable::type_check_class(class__class *cls) {
-
     method_table.enterscope();
     object_table.enterscope();
     active_class = cls;
-
 
     // First add all features to the scope.
     Features features = cls->get_features();
@@ -233,7 +252,7 @@ void ClassTable::type_check_class(class__class *cls) {
         if (typeid(*feat) == typeid(attr_class)) {
             attr_class* attr = dynamic_cast<attr_class *>(feat);
             Expression expr = attr->get_expression();
-            if (attr->get_expression() != no_expr()) {
+            if (typeid(*attr->get_expression()) != typeid(no_expr_class)) {
                 Symbol declared_type = attr->get_type_decl();
                 Symbol inferred_type = expr->check_type(this);
                 if (!is_subtype(inferred_type, declared_type)) {
@@ -245,10 +264,10 @@ void ClassTable::type_check_class(class__class *cls) {
         } else if (typeid(*feat) == typeid(method_class)) {
             method_class* method = dynamic_cast<method_class *>(feat);
             Expression expr = method->get_expression();
-            if (method->get_expression() != no_expr()) {
+            if (typeid(*method->get_expression()) != typeid(no_expr_class)) {
                 Symbol declared_type = method->get_return_type();
                 Symbol inferred_type = expr->check_type(this);
-                if (inferred_type != declared_type) {
+                if (!is_subtype(inferred_type, declared_type)) {
                     semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type << "." << endl;
                 } else {
                     expr->set_type(declared_type);
@@ -311,7 +330,7 @@ bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
     class__class* curr = class_b;
 
     while (curr != NULL) {
-        if (curr == class_b) {
+        if (curr == class_a) {
             return true;
         }
         std::map<class__class *, class__class *>::iterator it = parent_graph.find(curr);

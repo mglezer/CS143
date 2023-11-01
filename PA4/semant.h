@@ -28,6 +28,7 @@ private:
   std::map<Symbol, class__class *> class_by_name;
   std::map<class__class *, class__class *> parent_graph;
   std::multimap<class__class *, class__class *> child_graph;
+  std::set<Symbol> built_in_classes;
   MethodTable method_table;
   ObjectTable object_table;
   class__class *active_class;
