@@ -236,9 +236,41 @@ void ClassTable::type_check_class(class__class *cls) {
         if (typeid(*feat) == typeid(attr_class)) {
             attr_class* attr = dynamic_cast<attr_class *>(feat);
             Symbol declared_type = attr->get_type_decl();
+            if (object_table.probe(attr->get_name()) != NULL) {
+                semant_error(cls->get_filename(), feat) << "Attribute " << attr->get_name() << " is multiply defined in class." << endl;
+                continue;
+            } else if (object_table.lookup(attr->get_name()) != NULL) {
+                semant_error(cls->get_filename(), feat) << "Attribute " << attr->get_name() << " is an attribute of an inherited class." << endl;
+                continue;
+            }
             object_table.addid(attr->get_name(), declared_type);
         } else if (typeid(*feat) == typeid(method_class)) {
             method_class* method = dynamic_cast<method_class *>(feat);
+            if (method_table.probe(method->get_name()) != NULL) {
+                semant_error(cls->get_filename(), feat) << "Method " << method->get_name() << " is multiply defined." << endl;
+                continue;
+            } else if (method_class *ancestor_method = method_table.lookup(method->get_name()); ancestor_method != NULL) {
+                // The formals and return type need to be exactly the same.
+                if (ancestor_method->get_return_type() != method->get_return_type()) {
+                    semant_error(cls->get_filename(), feat) << "In redefined method " << method->get_name() << ", return type " << method->get_return_type() << " is different from original return type " << ancestor_method->get_return_type() << "." << endl;
+                    continue;
+                }
+                Formals ancestor_formals = ancestor_method->get_formals();
+                Formals child_formals = method->get_formals();
+                if (ancestor_formals->len() != child_formals->len()) {
+                    semant_error(cls->get_filename(), feat) << "Incompatible number of formal parameters in redefined method " << method->get_name() << endl;
+                    continue;
+                }
+                for (int i = child_formals->first(); child_formals->more(i); i = child_formals->next(i)) {
+                    // The name of the formal can differ, but the type cannot.
+                    formal_class *ancestor_formal = dynamic_cast<formal_class *>(ancestor_formals->nth(i));
+                    formal_class *child_formal = dynamic_cast<formal_class *>(child_formals->nth(i));
+                    if (ancestor_formal->get_type_decl() != child_formal->get_type_decl()) {
+                        semant_error(cls->get_filename(), feat) << "In redefined method " << method->get_name() << " parameter type " << child_formal->get_type_decl() << " is different from original type " << ancestor_formal->get_type_decl() << "." << endl;
+                        continue;
+                    }
+                }
+            }
             method_table.addid(method->get_name(), method);
         } else {
             // Attributes and methods are the only possible children of a class.
