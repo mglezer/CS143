@@ -276,7 +276,9 @@ void ClassTable::type_check_class(class__class *cls) {
         }
     }
 
-    for (std::multimap<class__class *, class__class *>::iterator it = child_graph.find(cls); it != child_graph.end(); it++) {
+    std::pair<std::multimap<class__class *, class__class *>::iterator, 
+std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
+    for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
         type_check_class(it->second);
     }
 
