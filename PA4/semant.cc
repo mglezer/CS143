@@ -100,11 +100,13 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     class__class *bool_class = new class__class(Bool, NULL, nil_Features(), NULL);
     class__class *int_class = new class__class(Int, NULL, nil_Features(), NULL);
     class__class *io_class = new class__class(IO, NULL, nil_Features(), NULL);
+    class__class *self_class = new class__class(SELF_TYPE, NULL, nil_Features(), NULL);
     class_by_name.insert(std::pair(Object, object_class));
     class_by_name.insert(std::pair(Str, string_class));
     class_by_name.insert(std::pair(Bool, bool_class));
     class_by_name.insert(std::pair(Int, int_class));
     class_by_name.insert(std::pair(IO, io_class));
+    class_by_name.insert(std::pair(SELF_TYPE, self_class));
     parent_graph.insert(std::pair(string_class, object_class));
     parent_graph.insert(std::pair(bool_class, object_class));
     parent_graph.insert(std::pair(int_class, object_class));
@@ -219,14 +221,17 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
             top_level_classes.push_back(pair.first);
         }
     }
+    // We must enter a scope before initializing the object table.
+    method_table.enterscope();
+    object_table.enterscope();
+    // Make self globally  available.
+    object_table.addid(self, SELF_TYPE);
     for (const auto &cls : top_level_classes) {
         type_check_class(cls);
     }
 }
 
 void ClassTable::type_check_class(class__class *cls) {
-    method_table.enterscope();
-    object_table.enterscope();
     active_class = cls;
 
     // First add all features to the scope.
@@ -311,11 +316,13 @@ void ClassTable::type_check_class(class__class *cls) {
     std::pair<std::multimap<class__class *, class__class *>::iterator, 
 std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
     for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
+        method_table.enterscope();
+        object_table.enterscope();
         type_check_class(it->second);
+        method_table.exitscope();
+        object_table.exitscope();
     }
 
-    method_table.exitscope();
-    object_table.exitscope();
 }
 
 Symbol object_class::check_type(void *ptr) {
@@ -326,6 +333,10 @@ Symbol object_class::check_type(void *ptr) {
         return Object;
     }
     return sym;
+}
+
+Symbol new__class::check_type(void *ptr) {
+    return type_name;
 }
 
 Symbol int_const_class::check_type(void *ptr) {
@@ -353,6 +364,13 @@ class__class *ClassTable::get_active_class() {
 }
 
 bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
+    if (class_name_b == class_name_a) {
+        return true;
+    }
+    // SELF_TYPE_c <= a iff c <= a, so we can resolve SELF_TYPE to the active class.
+    if (class_name_b == SELF_TYPE) {
+        class_name_b = active_class->get_name();
+    }
     std::map<Symbol, class__class*>::iterator it_b = class_by_name.find(class_name_b);
     std::map<Symbol, class__class*>::iterator it_a = class_by_name.find(class_name_a);
     // Both classes should be valid names which exist in the map.
