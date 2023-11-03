@@ -156,6 +156,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
                 parent_graph.insert(std::pair(cls, parent_iterator->second));
                 child_graph.insert(std::pair(parent_iterator->second, cls));
             } else {
+                child_graph.insert(std::pair(object_class, cls));
                 parent_graph.insert(std::pair(cls, object_class));
             }
         }
@@ -307,7 +308,7 @@ void ClassTable::type_check_class(class__class *cls) {
                 if (!is_subtype(inferred_type, declared_type)) {
                     semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type << "." << endl;
                 } else {
-                    expr->set_type(declared_type);
+                    expr->set_type(inferred_type);
                 }
             }
         }
@@ -325,29 +326,166 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
 
 }
 
+Symbol loop_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol pred_type = pred->check_type(ptr);
+    if (pred_type != Bool) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Loop condition does not have type Bool." << endl;
+    }
+    body->check_type(ptr); // The type of the loop is always Object so this value is ignored.
+    this->set_type(Object);
+    return Object;
+}
+
+Symbol cond_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol pred_type = pred->check_type(ptr);
+    if (pred_type != Bool) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Predicate of 'if' does not have type Bool." << endl;
+    }
+    Symbol type = class_table->least_upper_bound(then_exp->check_type(ptr), else_exp->check_type(ptr));
+    assert(type != NULL);
+    this->set_type(type);
+    return type;
+}
+
+Symbol ClassTable::least_upper_bound(Symbol a, Symbol b) {
+    return least_upper_bound(a, b, Object);
+}
+
+Symbol ClassTable::least_upper_bound(Symbol a, Symbol b, Symbol current) {
+    if (current == NULL) {
+        return NULL;
+    }
+    if (current == a) {
+        return a;
+    }
+    if (current == b) {
+        return b;
+    }
+    std::list<Symbol> ancestors;
+    std::map<Symbol, class__class*>::iterator it = class_by_name.find(current);
+    assert(it != class_by_name.end());
+    class__class* cls = it->second;
+    std::pair<std::multimap<class__class *, class__class *>::iterator, 
+std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
+    for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
+        Symbol candidate = least_upper_bound(a, b, it->second->get_name());
+        if (candidate != NULL) {
+            ancestors.push_back(candidate);
+        }
+    }
+    assert(ancestors.size() <= 2);
+    if (ancestors.size() == 2) {
+        return current;
+    } else if (ancestors.size() == 1) {
+        return ancestors.front();
+    } else {
+        return NULL;
+    }
+}
+
 Symbol object_class::check_type(void *ptr) {
-    ClassTable class_table = *(ClassTableP)ptr;
-    Symbol sym = class_table.lookup_object(this->name);
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol sym = class_table->lookup_object(this->name);
     if (sym == NULL) {
-        class_table.semant_error(class_table.get_active_class()->get_filename(), this) << "Undeclared identifier " << this->name << "." << endl;
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Undeclared identifier " << this->name << "." << endl;
         return Object;
     }
+    set_type(sym);
     return sym;
 }
 
+Symbol isvoid_class::check_type(void *ptr) {
+    set_type(Bool);
+    return Bool;
+}
+
+Symbol comp_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol type = e1->check_type(ptr);
+    if (type != Bool) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Argument of not has type " << type << " instead of Bool." << endl;
+    }
+    set_type(Bool);
+    return Bool;
+}
+
+
+Symbol neg_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol type = e1->check_type(ptr);
+    if (type != Int) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Argument of '~' has type " << type << " instead of Int." << endl;
+    }
+    set_type(Int);
+    return Int;
+}
+
+Symbol lt_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Bool, e1->check_type(ptr), e2->check_type(ptr), "<");
+}
+
+Symbol leq_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Bool, e1->check_type(ptr), e2->check_type(ptr), "<=");
+}
+
+Symbol plus_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Int, e1->check_type(ptr), e2->check_type(ptr), "+");
+}
+
+Symbol sub_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Int, e1->check_type(ptr), e2->check_type(ptr), "-");
+}
+
+Symbol mul_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Int, e1->check_type(ptr), e2->check_type(ptr), "*");
+}
+
+Symbol divide_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    return class_table->verify_arith(this, Int, e1->check_type(ptr), e2->check_type(ptr), "/");
+}
+
+Symbol ClassTable::verify_arith(Expression expr, Symbol type, Symbol t1, Symbol t2, std::string op) {
+    if (t1 != Int || t2 != Int) {
+        semant_error(get_active_class()->get_filename(), expr) << "non-Int arguments: " << t1 << " " << op << " " << t2 << endl;
+    }
+    expr->set_type(type);
+    return type;
+}
+
+Symbol block_class::check_type(void *ptr) {
+    Symbol last_type;
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        last_type = body->nth(i)->check_type(ptr);
+    }
+    set_type(last_type);
+    return last_type;
+}
+
 Symbol new__class::check_type(void *ptr) {
+    set_type(type_name);
     return type_name;
 }
 
 Symbol int_const_class::check_type(void *ptr) {
+   set_type(Int);
    return Int;
 }
 
 Symbol string_const_class::check_type(void *ptr) {
+    set_type(Str);
     return Str;
 }
 
 Symbol bool_const_class::check_type(void *ptr) {
+    set_type(Bool);
    return Bool;
 }
 
@@ -364,10 +502,12 @@ class__class *ClassTable::get_active_class() {
 }
 
 bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
+    assert(class_name_b != NULL);
+    assert(class_name_a != NULL);
     if (class_name_b == class_name_a) {
         return true;
     }
-    // SELF_TYPE_c <= a iff c <= a, so we can resolve SELF_TYPE to the active class.
+    // SELF_TYPE_b <= a iff b <= a, so we can resolve SELF_TYPE to the active class.
     if (class_name_b == SELF_TYPE) {
         class_name_b = active_class->get_name();
     }
@@ -579,6 +719,7 @@ void program_class::semant()
     ClassTable *classtable = new ClassTable(classes);
 
     /* some semantic analysis code may go here */
+
 
     if (classtable->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
