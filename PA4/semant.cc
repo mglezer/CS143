@@ -326,6 +326,22 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
 
 }
 
+Symbol eq_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol t1 = e1->check_type(ptr);
+    Symbol t2 = e2->check_type(ptr);
+    if ((t1 == Str  || 
+         t2 == Str  ||
+         t1 == Bool ||
+         t2 == Bool ||
+         t1 == Int  ||
+         t2 == Int) && t1 != t2) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Illegal comparison with a basic type." << endl;
+    }
+    this->set_type(Bool);
+    return Bool;
+}
+
 Symbol loop_class::check_type(void *ptr) {
     ClassTable *class_table = (ClassTable *)ptr;
     Symbol pred_type = pred->check_type(ptr);
