@@ -40,8 +40,6 @@ private:
           std::set<class__class*> &visiting,
           std::set<class__class*> &cycle_nodes);
 
-  bool is_subtype(Symbol clazz_b, Symbol clazz_a);
-
   void type_check_class(class__class *cls);
   Symbol get_type(Expression expression);
 
@@ -54,6 +52,9 @@ public:
   Symbol lookup_object(Symbol object);
   method_class *lookup_method(Symbol method);
   class__class *get_active_class();
+  MethodTable *get_method_table();
+  ObjectTable *get_object_table();
+  bool is_subtype(Symbol clazz_b, Symbol clazz_a);
   Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op);
   Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current);
   Symbol least_upper_bound(std::set<Symbol> nodes);

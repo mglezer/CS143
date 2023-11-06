@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+
+diff <(./mysemant $1 2>&1) <(./theirsemant $1 2>&1);

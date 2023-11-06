@@ -1,7 +1,17 @@
 class C {
 	a : Int;
 	b : Bool;
+    d : D <- new D;
     bool: Bool;
+    eq: Bool <- 4 = 5;
+    obj: Object <- d;
+    cs: Object <- case d of
+        c: C => c;
+        d: D => d;
+        e: E => e;
+        o: Object => o;
+    esac;
+        
     loopy: Object <- while false loop 5 pool;
     cond: Object <- if b then 5 else "abc" fi;
     neu: SELF_TYPE <- new SELF_TYPE;

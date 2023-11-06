@@ -68,6 +68,8 @@ class Formal_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
+   virtual Symbol get_name() = 0;
+   virtual Symbol get_type_decl() = 0;
 
 #ifdef Formal_EXTRAS
    Formal_EXTRAS
@@ -84,6 +86,8 @@ public:
    virtual Expression copy_Expression() = 0;
    virtual Symbol check_type(void *ptr) { return idtable.add_string("Object"); }
 
+
+
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
 #endif
@@ -97,6 +101,8 @@ class Case_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Case(); }
    virtual Case copy_Case() = 0;
+   virtual Symbol check_type(void *ptr) = 0;
+   virtual Symbol get_type_decl() = 0;
 
 #ifdef Case_EXTRAS
    Case_EXTRAS
@@ -249,6 +255,7 @@ public:
    }
    Formal copy_Formal();
    void dump(ostream& stream, int n);
+   Symbol get_name() { return name; }
    Symbol get_type_decl() { return type_decl; }
 
 #ifdef Formal_SHARED_EXTRAS
@@ -274,6 +281,10 @@ public:
    }
    Case copy_Case();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
+   Symbol get_type_decl() {
+       return type_decl;
+   }
 
 #ifdef Case_SHARED_EXTRAS
    Case_SHARED_EXTRAS
@@ -296,6 +307,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -418,6 +430,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -623,6 +636,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -791,6 +805,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS

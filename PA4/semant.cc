@@ -303,6 +303,12 @@ void ClassTable::type_check_class(class__class *cls) {
             method_class* method = dynamic_cast<method_class *>(feat);
             Expression expr = method->get_expression();
             if (typeid(*method->get_expression()) != typeid(no_expr_class)) {
+                object_table.enterscope();
+                Formals formals = method->get_formals();
+                for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+                   Formal formal = formals->nth(i); 
+                   object_table.addid(formal->get_name(), formal->get_type_decl());
+                }
                 Symbol declared_type = method->get_return_type();
                 Symbol inferred_type = expr->check_type(this);
                 if (!is_subtype(inferred_type, declared_type)) {
@@ -310,6 +316,7 @@ void ClassTable::type_check_class(class__class *cls) {
                 } else {
                     expr->set_type(inferred_type);
                 }
+                object_table.exitscope();
             }
         }
     }
@@ -324,6 +331,35 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
         object_table.exitscope();
     }
 
+}
+
+Symbol typcase_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    expr->check_type(ptr);
+    std::set<Symbol> expr_types;
+    std::set<Symbol> decl_types;
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+        Case cs = cases->nth(i);
+        expr_types.insert(cs->check_type(ptr));
+        Symbol decl_type = cs->get_type_decl();
+        if (!decl_types.insert(decl_type).second) {
+            class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Duplicate branch " << decl_type << " in case statement." << endl;
+        }
+    }
+    Symbol lub = class_table->least_upper_bound(expr_types);
+    this->set_type(lub);
+    return lub;
+}
+
+Symbol branch_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    // Evaluate the expression with the case object added to the scope.
+    ObjectTable *object_table = class_table->get_object_table();
+    object_table->enterscope();
+    object_table->addid(name, type_decl);
+    Symbol inferred_type = expr->check_type(ptr);
+    object_table->exitscope();
+    return inferred_type;
 }
 
 Symbol eq_class::check_type(void *ptr) {
@@ -397,6 +433,21 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
     } else {
         return NULL;
     }
+}
+
+Symbol no_expr_class::check_type(void *ptr) {
+    return Object;
+}
+
+Symbol assign_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol inferred_type = expr->check_type(ptr);
+    Symbol decl_type = class_table->get_object_table()->lookup(name);
+    if (!class_table->is_subtype(inferred_type, decl_type)) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Type " << inferred_type << " of assigned expression does not conform to declared type " << decl_type << " of identifier " << name << "." << endl;
+    }
+    set_type(inferred_type);
+    return inferred_type;
 }
 
 Symbol object_class::check_type(void *ptr) {
@@ -513,6 +564,14 @@ method_class *ClassTable::lookup_method(Symbol method) {
 
 class__class *ClassTable::get_active_class() {
     return active_class;
+}
+
+MethodTable *ClassTable::get_method_table() {
+    return &method_table;
+}
+
+ObjectTable *ClassTable::get_object_table() {
+    return &object_table;
 }
 
 bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
