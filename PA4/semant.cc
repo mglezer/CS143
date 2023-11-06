@@ -410,7 +410,8 @@ Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
         return NULL;
     }
     if (nodes.count(current) > 0) {
-        // The current node is one of the nodes we're looking for
+        // The current node is one of the nodes we're looking for, so it or something above it
+        // must be the LUB.
         return current;
     }
     std::list<Symbol> ancestors;
@@ -433,6 +434,21 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
     } else {
         return NULL;
     }
+}
+
+Symbol let_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    // The initialization expression is evaluated before the object is added to the scope.
+    Symbol inferred_type = init->check_type(ptr);
+    if (!class_table->is_subtype(inferred_type, type_decl)) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of " << identifier << " does not conform to identifier's declared type " << type_decl << "." << endl;
+    }
+    ObjectTable *object_table = class_table->get_object_table();
+    object_table->enterscope();
+    object_table->addid(identifier, type_decl);
+    Symbol body_type = body->check_type(ptr);
+    object_table->exitscope();
+    return body_type;
 }
 
 Symbol no_expr_class::check_type(void *ptr) {

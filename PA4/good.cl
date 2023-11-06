@@ -11,7 +11,7 @@ class C {
         e: E => e;
         o: Object => o;
     esac;
-        
+    letty: Int <- let neu: Int <- neu, d: Int <- 8 in neu + d;
     loopy: Object <- while false loop 5 pool;
     cond: Object <- if b then 5 else "abc" fi;
     neu: SELF_TYPE <- new SELF_TYPE;

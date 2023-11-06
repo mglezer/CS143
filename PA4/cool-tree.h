@@ -478,6 +478,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
