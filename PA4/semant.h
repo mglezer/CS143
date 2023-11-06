@@ -55,8 +55,8 @@ public:
   method_class *lookup_method(Symbol method);
   class__class *get_active_class();
   Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op);
-  Symbol least_upper_bound(Symbol a, Symbol b, Symbol current);
-  Symbol least_upper_bound(Symbol a, Symbol b);
+  Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current);
+  Symbol least_upper_bound(std::set<Symbol> nodes);
 };
 
 

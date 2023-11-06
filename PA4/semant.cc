@@ -359,25 +359,23 @@ Symbol cond_class::check_type(void *ptr) {
     if (pred_type != Bool) {
         class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Predicate of 'if' does not have type Bool." << endl;
     }
-    Symbol type = class_table->least_upper_bound(then_exp->check_type(ptr), else_exp->check_type(ptr));
+    Symbol type = class_table->least_upper_bound(std::set<Symbol>({then_exp->check_type(ptr), else_exp->check_type(ptr)}));
     assert(type != NULL);
     this->set_type(type);
     return type;
 }
 
-Symbol ClassTable::least_upper_bound(Symbol a, Symbol b) {
-    return least_upper_bound(a, b, Object);
+Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes) {
+    return least_upper_bound(nodes, Object);
 }
 
-Symbol ClassTable::least_upper_bound(Symbol a, Symbol b, Symbol current) {
+Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
     if (current == NULL) {
         return NULL;
     }
-    if (current == a) {
-        return a;
-    }
-    if (current == b) {
-        return b;
+    if (nodes.count(current) > 0) {
+        // The current node is one of the nodes we're looking for
+        return current;
     }
     std::list<Symbol> ancestors;
     std::map<Symbol, class__class*>::iterator it = class_by_name.find(current);
@@ -386,13 +384,13 @@ Symbol ClassTable::least_upper_bound(Symbol a, Symbol b, Symbol current) {
     std::pair<std::multimap<class__class *, class__class *>::iterator, 
 std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
     for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
-        Symbol candidate = least_upper_bound(a, b, it->second->get_name());
+        Symbol candidate = least_upper_bound(nodes, it->second->get_name());
         if (candidate != NULL) {
             ancestors.push_back(candidate);
         }
     }
-    assert(ancestors.size() <= 2);
-    if (ancestors.size() == 2) {
+    assert(ancestors.size() <= nodes.size());
+    if (ancestors.size() >= 2) {
         return current;
     } else if (ancestors.size() == 1) {
         return ancestors.front();
