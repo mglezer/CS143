@@ -11,7 +11,7 @@ class C {
         e: E => e;
         o: Object => o;
     esac;
-    letty: Int <- let neu: Int <- neu, d: Int <- 8 in neu + d;
+    letty: Int <- let neu: Int <- 5, d: Int <- 8 in neu + d;
     loopy: Object <- while false loop 5 pool;
     cond: Object <- if b then 5 else "abc" fi;
     neu: SELF_TYPE <- new SELF_TYPE;
@@ -20,12 +20,16 @@ class C {
            {
 		a <- x;
 		b <- y;
+        c <- init(3, true);
 		self;
            }
 	};
 };
 
-class D inherits C {};
+class D inherits C {
+    get_copy(n: Int) : D { new D };
+};
+
 class E inherits D {};
 
 Class Main {

@@ -333,6 +333,65 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
 
 }
 
+Symbol dispatch_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    // First get the type of the base expression.
+    Symbol class_name = expr->is_empty() ? class_table->get_active_class()->get_name() : expr->check_type(ptr);
+    if (class_name == SELF_TYPE) {
+        class_name = class_table->get_active_class()->get_name();
+    }
+    method_class *method = class_table->find_method(class_name, name);
+    class__class *cls = class_table->get_active_class();
+    if (method == NULL) {
+        // The method does not exist.
+        class_table->semant_error(cls->get_filename(), this) << "Dispatch to undefined method " << name << "." << endl;
+        return Object;
+    }
+    Formals formals = method->get_formals();
+    if (formals->len() != actual->len()) {
+        class_table->semant_error(cls->get_filename(), this) << "Method " << name << " called with wrong number of arguments." << endl;
+    } else {
+        for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+            Formal formal = formals->nth(i);
+            Symbol passed_type = actual->nth(i)->check_type(ptr);
+Symbol intended_type = formal->get_type_decl();
+            if (!class_table->is_subtype(passed_type, intended_type)) {
+                class_table->semant_error(cls->get_filename(), this) << "In call of method " << name << ", type " << passed_type << " of parameter " << formal->get_name() << " does not conform to declared type " << intended_type << "." << endl;
+            }
+        }
+    }
+
+    set_type(method->get_return_type());
+    return method->get_return_type();
+}
+
+method_class *ClassTable::find_method(Symbol class_name, Symbol method_name) {
+    std::map<Symbol, class__class *>::iterator it = class_by_name.find(class_name);
+    assert(it != class_by_name.end());
+    class__class *cls = it->second;
+
+    while (cls != NULL) {
+        Features features = cls->get_features();
+        for (int i = features->first(); features->more(i); i = features->next(i)) {
+            Feature feat = features->nth(i);
+            if (typeid(*feat) == typeid(method_class)) {
+                method_class *method = dynamic_cast<method_class *>(feat);
+                if (method->get_name() == method_name) {
+                    return method;
+                }
+            }
+        }
+        // If we cannot find the method defined in the class, try the parent class;
+        // this may be an inherited method.
+        std::map<class__class *, class__class *>::iterator it = parent_graph.find(cls);
+        if (it == parent_graph.end()) {
+            return NULL;
+        }
+        cls = it->second;
+    }
+    return NULL;
+}
+
 Symbol typcase_class::check_type(void *ptr) {
     ClassTable *class_table = (ClassTable *)ptr;
     expr->check_type(ptr);
@@ -448,6 +507,7 @@ Symbol let_class::check_type(void *ptr) {
     object_table->addid(identifier, type_decl);
     Symbol body_type = body->check_type(ptr);
     object_table->exitscope();
+    set_type(body_type);
     return body_type;
 }
 
