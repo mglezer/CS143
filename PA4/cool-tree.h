@@ -84,7 +84,7 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
-   virtual Symbol check_type(void *ptr) { return idtable.add_string("Object"); }
+   virtual Symbol check_type(void *ptr) = 0;
    virtual bool is_empty() { return false; }
 
 
@@ -335,6 +335,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Symbol check_type(void *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS

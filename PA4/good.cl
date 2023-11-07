@@ -20,7 +20,7 @@ class C {
            {
 		a <- x;
 		b <- y;
-        c <- init(3, true);
+        c <- d.init(3, true);
 		self;
            }
 	};

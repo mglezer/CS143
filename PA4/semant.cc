@@ -335,33 +335,56 @@ std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_
 
 Symbol dispatch_class::check_type(void *ptr) {
     ClassTable *class_table = (ClassTable *)ptr;
-    // First get the type of the base expression.
-    Symbol class_name = expr->is_empty() ? class_table->get_active_class()->get_name() : expr->check_type(ptr);
-    if (class_name == SELF_TYPE) {
-        class_name = class_table->get_active_class()->get_name();
+    Symbol type = class_table->validate_dispatch(this, expr, NULL, name, actual);
+    set_type(type);
+    return type;
+}
+
+Symbol static_dispatch_class::check_type(void *ptr) {
+    ClassTable *class_table = (ClassTable *)ptr;
+    Symbol type = class_table->validate_dispatch(this, expr, type_name, name, actual);
+    set_type(type);
+    return type;
+}
+
+Symbol ClassTable::validate_dispatch(Expression dispatch, Expression expr, Symbol static_type, Symbol method_name, Expressions arguments) {
+
+    Symbol expression_type = expr->check_type(this);
+    bool is_static = static_type != NULL;
+    Symbol class_name;
+    if (is_static) {
+        if (!is_subtype(expression_type, static_type)) {
+            semant_error(active_class->get_filename(), dispatch) << "Expression type " << expression_type << " does not conform to declared static dispatch type " << static_type << "." << endl;
+            return Object;
+        }
+        class_name = static_type;
+    } else {
+        // First get the type of the base expression.
+        class_name = expr->is_empty() ? get_active_class()->get_name() : expression_type;
     }
-    method_class *method = class_table->find_method(class_name, name);
-    class__class *cls = class_table->get_active_class();
+    if (class_name == SELF_TYPE) {
+        class_name = get_active_class()->get_name();
+    }
+    method_class *method = find_method(class_name, method_name);
+    class__class *cls = get_active_class();
     if (method == NULL) {
         // The method does not exist.
-        class_table->semant_error(cls->get_filename(), this) << "Dispatch to undefined method " << name << "." << endl;
+        semant_error(cls->get_filename(), dispatch) << std::string(is_static ? "Static dispatch " : "Dispatch ") << "to undefined method " << method_name << "." << endl;
         return Object;
     }
     Formals formals = method->get_formals();
-    if (formals->len() != actual->len()) {
-        class_table->semant_error(cls->get_filename(), this) << "Method " << name << " called with wrong number of arguments." << endl;
+    if (formals->len() != arguments->len()) {
+        semant_error(cls->get_filename(), dispatch) << "Method " << method_name << std::string(is_static ? " invoked with " : " called with ") << "wrong number of arguments." << endl;
     } else {
         for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
             Formal formal = formals->nth(i);
-            Symbol passed_type = actual->nth(i)->check_type(ptr);
+            Symbol passed_type = arguments->nth(i)->check_type(this);
 Symbol intended_type = formal->get_type_decl();
-            if (!class_table->is_subtype(passed_type, intended_type)) {
-                class_table->semant_error(cls->get_filename(), this) << "In call of method " << name << ", type " << passed_type << " of parameter " << formal->get_name() << " does not conform to declared type " << intended_type << "." << endl;
+            if (!is_subtype(passed_type, intended_type)) {
+                semant_error(cls->get_filename(), dispatch) << "In call of method " << method_name << ", type " << passed_type << " of parameter " << formal->get_name() << " does not conform to declared type " << intended_type << "." << endl;
             }
         }
     }
-
-    set_type(method->get_return_type());
     return method->get_return_type();
 }
 

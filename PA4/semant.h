@@ -59,6 +59,7 @@ public:
   Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current);
   Symbol least_upper_bound(std::set<Symbol> nodes);
   method_class *find_method(Symbol class_name, Symbol method_name);
+  Symbol validate_dispatch(Expression dispatch, Expression expr, Symbol static_type, Symbol method_name, Expressions arguments);
 };
 
 
