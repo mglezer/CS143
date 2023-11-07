@@ -90,40 +90,16 @@ static void initialize_constants(void)
 ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) {
 
     /* Fill this in */
+    install_basic_classes();
 
     // Create a map of class names to classes for easy lookup, and make sure no classes are defined
     // multiple times.
     // 
     // For convenience, insert built-in classes into the name map.
-    class__class* object_class = new class__class(Object, NULL, nil_Features(), NULL);
-    class__class *string_class = new class__class(Str, NULL, nil_Features(), NULL);
-    class__class *bool_class = new class__class(Bool, NULL, nil_Features(), NULL);
-    class__class *int_class = new class__class(Int, NULL, nil_Features(), NULL);
-    class__class *io_class = new class__class(IO, NULL, nil_Features(), NULL);
-    class__class *self_class = new class__class(SELF_TYPE, NULL, nil_Features(), NULL);
-    class_by_name.insert(std::pair(Object, object_class));
-    class_by_name.insert(std::pair(Str, string_class));
-    class_by_name.insert(std::pair(Bool, bool_class));
-    class_by_name.insert(std::pair(Int, int_class));
-    class_by_name.insert(std::pair(IO, io_class));
-    class_by_name.insert(std::pair(SELF_TYPE, self_class));
-    parent_graph.insert(std::pair(string_class, object_class));
-    parent_graph.insert(std::pair(bool_class, object_class));
-    parent_graph.insert(std::pair(int_class, object_class));
-    parent_graph.insert(std::pair(io_class, object_class));
-    child_graph.insert(std::pair(object_class, string_class));
-    child_graph.insert(std::pair(object_class, bool_class));
-    child_graph.insert(std::pair(object_class, int_class));
-    child_graph.insert(std::pair(object_class, io_class));
-    built_in_classes.insert(Object);
-    built_in_classes.insert(Str);
-    built_in_classes.insert(Bool);
-    built_in_classes.insert(Int);
-    built_in_classes.insert(IO);
 
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         // Unfortunately it seems we must cast to the subclass here.
-        class__class *cls = dynamic_cast<class__class*>(classes->nth(i));
+        Class_ cls = classes->nth(i);
         Symbol parent = cls->get_parent();
         Symbol child = cls->get_name();
 
@@ -141,36 +117,42 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     }
 
     // Build the inheritance graph and verify no parent classes are undefined.
-    for (std::map<Symbol, class__class *>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
-        class__class *cls = it->second;
-        if (cls->get_parent() == NULL) {
+    for (std::map<Symbol, Class_>::iterator it = class_by_name.begin(); it != class_by_name.end(); ++it) {
+        Class_ cls = it->second;
+        if (cls->get_parent() == No_class) {
             continue;
         } else {
             if (cls->get_parent() != Object) {
                 Symbol name = cls->get_name();
                 Symbol parent_name = cls->get_parent();
-                std::map<Symbol, class__class *>::iterator parent_iterator = class_by_name.find(parent_name);
+                std::map<Symbol, Class_>::iterator parent_iterator = class_by_name.find(parent_name);
                 if (parent_iterator == class_by_name.end()) {
                     semant_error(cls) << "Class " << name << " inherits from an undefined class " << parent_name << "." << endl;
                 }
                 parent_graph.insert(std::pair(cls, parent_iterator->second));
                 child_graph.insert(std::pair(parent_iterator->second, cls));
             } else {
-                child_graph.insert(std::pair(object_class, cls));
-                parent_graph.insert(std::pair(cls, object_class));
+                child_graph.insert(std::pair(Object_class, cls));
+                parent_graph.insert(std::pair(cls, Object_class));
             }
         }
     }
 
+    for (const auto &pair : child_graph) {
+    }
+
+    for (const auto &pair : parent_graph) {
+    }
+
     // Make sure there are no cycles in the inheritance graph.
-    std::set<class__class *> visited;
-    std::set<class__class *> cycle_nodes;
-    for (std::map<class__class *, class__class *>::iterator it = parent_graph.begin(); it != parent_graph.end(); ++it) {
-        class__class *current_class = it->first;
+    std::set<Class_> visited;
+    std::set<Class_> cycle_nodes;
+    for (std::map<Class_, Class_>::iterator it = parent_graph.begin(); it != parent_graph.end(); ++it) {
+        Class_ current_class = it->first;
         if (!visited.insert(current_class).second) {
             continue;
         }
-        std::set<class__class*> visiting;
+        std::set<Class_> visiting;
         visiting.insert(current_class);
         this->find_cycle_in_subgraph(current_class, parent_graph, visited, visiting, cycle_nodes);
         visiting.erase(current_class);
@@ -178,7 +160,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     }
 
     if (cycle_nodes.size() > 0) {
-        for (class__class *cls : cycle_nodes) {
+        for (Class_ cls : cycle_nodes) {
             Symbol name = cls->get_name();
             semant_error(cls) << "Class " << name << ", or an ancestor of " << name << ", is involved in an inheritance cycle." << endl;
         }
@@ -186,13 +168,13 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     }
 
     // Validate that a Main class exists and that it has a main method.
-    std::map<Symbol, class__class*>::iterator main_it = class_by_name.find(Main);
+    std::map<Symbol, Class_>::iterator main_it = class_by_name.find(Main);
     if (main_it == class_by_name.end()) {
         semant_error() << "Class Main is not defined." << endl;
         return;
     }
 
-    class__class* main_class = main_it->second;
+    Class_ main_class = main_it->second;
     Features features = main_class->get_features();
     bool main_method_found = false;
     for (int i = features->first(); features->more(i); i = features->next(i)) {
@@ -214,10 +196,10 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // Gather all user-defined classes at the top of the hierarchy (i.e. which inherit directly from
     // Object). Each child class will inherit the top-level scope of its parent, i.e. its fields and
     // methods.
-    std::list<class__class *> top_level_classes;
+    std::list<Class_> top_level_classes;
     for (const auto &pair : parent_graph) {
         bool is_user_defined = built_in_classes.find(pair.first->get_name()) == built_in_classes.end();
-        bool inherits_from_object = pair.second == object_class;
+        bool inherits_from_object = pair.second == Object_class;
         if (inherits_from_object && is_user_defined) {
             top_level_classes.push_back(pair.first);
         }
@@ -232,7 +214,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     }
 }
 
-void ClassTable::type_check_class(class__class *cls) {
+void ClassTable::type_check_class(Class_ cls) {
     active_class = cls;
 
     // First add all features to the scope.
@@ -321,9 +303,9 @@ void ClassTable::type_check_class(class__class *cls) {
         }
     }
 
-    std::pair<std::multimap<class__class *, class__class *>::iterator, 
-std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
-    for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
+    std::pair<std::multimap<Class_, Class_>::iterator, 
+std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
+    for (std::multimap<Class_, Class_>::iterator it = ret.first; it != ret.second; ++it) {
         method_table.enterscope();
         object_table.enterscope();
         type_check_class(it->second);
@@ -366,7 +348,7 @@ Symbol ClassTable::validate_dispatch(Expression dispatch, Expression expr, Symbo
         class_name = get_active_class()->get_name();
     }
     method_class *method = find_method(class_name, method_name);
-    class__class *cls = get_active_class();
+    Class_ cls = get_active_class();
     if (method == NULL) {
         // The method does not exist.
         semant_error(cls->get_filename(), dispatch) << std::string(is_static ? "Static dispatch " : "Dispatch ") << "to undefined method " << method_name << "." << endl;
@@ -389,9 +371,9 @@ Symbol intended_type = formal->get_type_decl();
 }
 
 method_class *ClassTable::find_method(Symbol class_name, Symbol method_name) {
-    std::map<Symbol, class__class *>::iterator it = class_by_name.find(class_name);
+    std::map<Symbol, Class_>::iterator it = class_by_name.find(class_name);
     assert(it != class_by_name.end());
-    class__class *cls = it->second;
+    Class_ cls = it->second;
 
     while (cls != NULL) {
         Features features = cls->get_features();
@@ -406,7 +388,7 @@ method_class *ClassTable::find_method(Symbol class_name, Symbol method_name) {
         }
         // If we cannot find the method defined in the class, try the parent class;
         // this may be an inherited method.
-        std::map<class__class *, class__class *>::iterator it = parent_graph.find(cls);
+        std::map<Class_, Class_>::iterator it = parent_graph.find(cls);
         if (it == parent_graph.end()) {
             return NULL;
         }
@@ -484,6 +466,8 @@ Symbol cond_class::check_type(void *ptr) {
 }
 
 Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes) {
+    for (const auto &sym: nodes) {
+    }
     return least_upper_bound(nodes, Object);
 }
 
@@ -497,12 +481,12 @@ Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
         return current;
     }
     std::list<Symbol> ancestors;
-    std::map<Symbol, class__class*>::iterator it = class_by_name.find(current);
+    std::map<Symbol, Class_>::iterator it = class_by_name.find(current);
     assert(it != class_by_name.end());
-    class__class* cls = it->second;
-    std::pair<std::multimap<class__class *, class__class *>::iterator, 
-std::multimap<class__class *, class__class*>::iterator> ret = child_graph.equal_range(cls);
-    for (std::multimap<class__class *, class__class *>::iterator it = ret.first; it != ret.second; ++it) {
+    Class_ cls = it->second;
+    std::pair<std::multimap<Class_, Class_>::iterator, 
+std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
+    for (std::multimap<Class_, Class_>::iterator it = ret.first; it != ret.second; ++it) {
         Symbol candidate = least_upper_bound(nodes, it->second->get_name());
         if (candidate != NULL) {
             ancestors.push_back(candidate);
@@ -661,7 +645,7 @@ method_class *ClassTable::lookup_method(Symbol method) {
     return method_table.lookup(method);
 }
 
-class__class *ClassTable::get_active_class() {
+Class_ ClassTable::get_active_class() {
     return active_class;
 }
 
@@ -683,21 +667,21 @@ bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
     if (class_name_b == SELF_TYPE) {
         class_name_b = active_class->get_name();
     }
-    std::map<Symbol, class__class*>::iterator it_b = class_by_name.find(class_name_b);
-    std::map<Symbol, class__class*>::iterator it_a = class_by_name.find(class_name_a);
+    std::map<Symbol, Class_>::iterator it_b = class_by_name.find(class_name_b);
+    std::map<Symbol, Class_>::iterator it_a = class_by_name.find(class_name_a);
     // Both classes should be valid names which exist in the map.
     assert(it_b != class_by_name.end());
     assert(it_a != class_by_name.end());
-    class__class* class_b = it_b->second;
-    class__class* class_a = it_a->second;
+    Class_ class_b = it_b->second;
+    Class_ class_a = it_a->second;
 
-    class__class* curr = class_b;
+    Class_ curr = class_b;
 
     while (curr != NULL) {
         if (curr == class_a) {
             return true;
         }
-        std::map<class__class *, class__class *>::iterator it = parent_graph.find(curr);
+        std::map<Class_, Class_>::iterator it = parent_graph.find(curr);
         curr = it == parent_graph.end() ? NULL : it->second;
     }
 
@@ -705,20 +689,20 @@ bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
 }
 
 void ClassTable::find_cycle_in_subgraph(
-        class__class *start_node,
-        std::map<class__class*, class__class*> graph,
-        std::set<class__class*> &visited,
-        std::set<class__class*> &visiting,
-        std::set<class__class*> &cycle_nodes) {
-    std::map<class__class*, class__class*>::iterator it = graph.find(start_node);
+        Class_ start_node,
+        std::map<Class_, Class_> graph,
+        std::set<Class_> &visited,
+        std::set<Class_> &visiting,
+        std::set<Class_> &cycle_nodes) {
+    std::map<Class_, Class_>::iterator it = graph.find(start_node);
     if (it == graph.end()) {
         return;
     }
-    class__class* parent = it->second;
+    Class_ parent = it->second;
     bool already_visiting = visiting.find(parent) != visiting.end();
     bool on_known_cycle = cycle_nodes.find(parent) != cycle_nodes.end();
     if (already_visiting || on_known_cycle) {
-        for (class__class *cls : visiting) {
+        for (Class_ cls : visiting) {
             cycle_nodes.insert(cls);
         }
         return;
@@ -759,7 +743,7 @@ void ClassTable::install_basic_classes() {
     // There is no need for method bodies in the basic classes---these
     // are already built in to the runtime system.
 
-    Class_ Object_class =
+    Object_class =
 	class_(Object, 
 	       No_class,
 	       append_Features(
@@ -834,6 +818,19 @@ void ClassTable::install_basic_classes() {
 						      Str, 
 						      no_expr()))),
 	       filename);
+    Class_ Self_class = class_(SELF_TYPE, No_class, nil_Features(), filename);
+
+    class_by_name.insert(std::pair(Object, Object_class));
+    class_by_name.insert(std::pair(Str, Str_class));
+    class_by_name.insert(std::pair(Bool, Bool_class));
+    class_by_name.insert(std::pair(Int, Int_class));
+    class_by_name.insert(std::pair(IO, IO_class));
+    class_by_name.insert(std::pair(SELF_TYPE, Self_class));
+    built_in_classes.insert(Object);
+    built_in_classes.insert(Str);
+    built_in_classes.insert(Bool);
+    built_in_classes.insert(Int);
+    built_in_classes.insert(IO);
 }
 
 ////////////////////////////////////////////////////////////////////

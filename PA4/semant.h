@@ -25,22 +25,23 @@ private:
   int semant_errors;
   void install_basic_classes();
   ostream& error_stream;
-  std::map<Symbol, class__class *> class_by_name;
-  std::map<class__class *, class__class *> parent_graph;
-  std::multimap<class__class *, class__class *> child_graph;
+  std::map<Symbol, Class_> class_by_name;
+  std::map<Class_, Class_> parent_graph;
+  std::multimap<Class_, Class_> child_graph;
   std::set<Symbol> built_in_classes;
   MethodTable method_table;
   ObjectTable object_table;
-  class__class *active_class;
+  Class_ active_class;
+  Class_ Object_class;
 
   void find_cycle_in_subgraph(
-          class__class *start_node,
-          std::map<class__class*, class__class*> graph,
-          std::set<class__class*> &visited,
-          std::set<class__class*> &visiting,
-          std::set<class__class*> &cycle_nodes);
+          Class_ start_node,
+          std::map<Class_, Class_> graph,
+          std::set<Class_> &visited,
+          std::set<Class_> &visiting,
+          std::set<Class_> &cycle_nodes);
 
-  void type_check_class(class__class *cls);
+  void type_check_class(Class_ cls);
   Symbol get_type(Expression expression);
 
 public:
@@ -51,7 +52,7 @@ public:
   ostream& semant_error(Symbol filename, tree_node *t);
   Symbol lookup_object(Symbol object);
   method_class *lookup_method(Symbol method);
-  class__class *get_active_class();
+  Class_ get_active_class();
   MethodTable *get_method_table();
   ObjectTable *get_object_table();
   bool is_subtype(Symbol clazz_b, Symbol clazz_a);
