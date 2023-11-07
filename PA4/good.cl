@@ -9,7 +9,7 @@ class C {
     substr: String <- str.substr(0, 5);
     ab: Object <- str.abort();
     cp: String <- str.copy();
-    type_name: String <- a.typename();
+    type_name: String <- a.type_name();
     eq: Bool <- 4 = 5;
     obj: Object <- d;
     cs: Object <- case d of

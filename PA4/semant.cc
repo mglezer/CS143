@@ -138,12 +138,6 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         }
     }
 
-    for (const auto &pair : child_graph) {
-    }
-
-    for (const auto &pair : parent_graph) {
-    }
-
     // Make sure there are no cycles in the inheritance graph.
     std::set<Class_> visited;
     std::set<Class_> cycle_nodes;
@@ -198,19 +192,21 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // methods.
     std::list<Class_> top_level_classes;
     for (const auto &pair : parent_graph) {
-        bool is_user_defined = built_in_classes.find(pair.first->get_name()) == built_in_classes.end();
-        bool inherits_from_object = pair.second == Object_class;
-        if (inherits_from_object && is_user_defined) {
+        bool inherits_from_built_in_class = built_in_classes.find(pair.second->get_name()) != built_in_classes.end();
+        if (inherits_from_built_in_class) {
             top_level_classes.push_back(pair.first);
         }
     }
+
     // We must enter a scope before initializing the object table.
-    method_table.enterscope();
-    object_table.enterscope();
     // Make self globally  available.
-    object_table.addid(self, SELF_TYPE);
     for (const auto &cls : top_level_classes) {
+        method_table.enterscope();
+        object_table.enterscope();
+        object_table.addid(self, SELF_TYPE);
         type_check_class(cls);
+        method_table.exitscope();
+        object_table.exitscope();
     }
 }
 
@@ -272,7 +268,7 @@ void ClassTable::type_check_class(Class_ cls) {
         if (typeid(*feat) == typeid(attr_class)) {
             attr_class* attr = dynamic_cast<attr_class *>(feat);
             Expression expr = attr->get_expression();
-            if (typeid(*attr->get_expression()) != typeid(no_expr_class)) {
+            if (!attr->get_expression()->is_empty()) {
                 Symbol declared_type = attr->get_type_decl();
                 Symbol inferred_type = expr->check_type(this);
                 if (!is_subtype(inferred_type, declared_type)) {
@@ -470,8 +466,6 @@ Symbol cond_class::check_type(void *ptr) {
 }
 
 Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes) {
-    for (const auto &sym: nodes) {
-    }
     return least_upper_bound(nodes, Object);
 }
 
@@ -482,7 +476,11 @@ Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
     if (nodes.count(current) > 0) {
         // The current node is one of the nodes we're looking for, so it or something above it
         // must be the LUB.
+        // This has higher precedence than the SELF_TYPE check below.
         return current;
+    }
+    if (nodes.count(SELF_TYPE) > 0 && current == active_class->get_name()) {
+        return SELF_TYPE;
     }
     std::list<Symbol> ancestors;
     std::map<Symbol, Class_>::iterator it = class_by_name.find(current);
@@ -509,9 +507,11 @@ std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
 Symbol let_class::check_type(void *ptr) {
     ClassTable *class_table = (ClassTable *)ptr;
     // The initialization expression is evaluated before the object is added to the scope.
-    Symbol inferred_type = init->check_type(ptr);
-    if (!class_table->is_subtype(inferred_type, type_decl)) {
-        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of " << identifier << " does not conform to identifier's declared type " << type_decl << "." << endl;
+    if (!init->is_empty()) {
+        Symbol inferred_type = init->check_type(ptr);
+        if (!class_table->is_subtype(inferred_type, type_decl)) {
+            class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of " << identifier << " does not conform to identifier's declared type " << type_decl << "." << endl;
+        }
     }
     ObjectTable *object_table = class_table->get_object_table();
     object_table->enterscope();
@@ -523,7 +523,7 @@ Symbol let_class::check_type(void *ptr) {
 }
 
 Symbol no_expr_class::check_type(void *ptr) {
-    return Object;
+    assert(false);
 }
 
 Symbol assign_class::check_type(void *ptr) {
