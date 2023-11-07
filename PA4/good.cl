@@ -3,6 +3,13 @@ class C {
 	b : Bool;
     d : D <- new D;
     bool: Bool;
+    str: String <- "hello world";
+    len: Int <- str.length();
+    conc: String <- str.concat(" you beautiful thing");
+    substr: String <- str.substr(0, 5);
+    ab: Object <- str.abort();
+    cp: String <- str.copy();
+    type_name: String <- a.typename();
     eq: Bool <- 4 = 5;
     obj: Object <- d;
     cs: Object <- case d of

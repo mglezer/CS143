@@ -367,6 +367,10 @@ Symbol intended_type = formal->get_type_decl();
             }
         }
     }
+
+    if (method->get_return_type() == SELF_TYPE) {
+        return expression_type;
+    }
     return method->get_return_type();
 }
 
