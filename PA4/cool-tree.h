@@ -11,6 +11,7 @@
 
 #include "tree.h"
 #include <set>
+#include <map>
 #include "cool-tree.handcode.h"
 #include <symtab.h>
 
@@ -24,6 +25,8 @@ class TypeChecker {
         virtual Symbol lookup_object(Symbol object) = 0;
         virtual method_class *lookup_method(Symbol method) = 0;
         virtual Class_ get_active_class() = 0;
+        virtual void set_active_class(Class_ cls) = 0;
+        virtual std::multimap<Class_, Class_> *get_child_graph() = 0;
         virtual MethodTable *get_method_table() = 0;
         virtual ObjectTable *get_object_table() = 0;
         virtual bool is_subtype(Symbol clazz_b, Symbol clazz_a) = 0;
@@ -60,6 +63,7 @@ public:
    virtual Symbol get_name() = 0;
    virtual Symbol get_parent() = 0;
    virtual Features get_features() = 0;
+   void type_check(TypeChecker *type_checker);
 
 #ifdef Class__EXTRAS
    Class__EXTRAS
@@ -74,6 +78,10 @@ class Feature_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
+   virtual void observe_feature(TypeChecker *type_checker) = 0;
+   virtual void check_feature(TypeChecker *type_checker) = 0;
+   virtual bool is_method() = 0;
+   virtual Symbol get_name() = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -223,10 +231,13 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
-   Symbol get_name() { return name; }
+   Symbol get_name() override { return name; }
    Formals get_formals() { return formals; }
    Symbol get_return_type() { return return_type; }
    Expression get_expression() { return expr; }
+   void observe_feature(TypeChecker *typeChecker) override;
+   void check_feature(TypeChecker *typeChecker) override;
+   bool is_method() override { return true; }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -251,9 +262,12 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
-   Symbol get_name() { return name; }
+   bool is_method() override { return false; }
+   Symbol get_name() override { return name; }
    Symbol get_type_decl() { return type_decl; }
    Expression get_expression() { return init; }
+   void observe_feature(TypeChecker *typeChecker) override;
+   void check_feature(TypeChecker *typeChecker) override;
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS

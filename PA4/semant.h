@@ -41,7 +41,6 @@ private:
           std::set<Class_> &visiting,
           std::set<Class_> &cycle_nodes);
 
-  void type_check_class(Class_ cls);
   Symbol get_type(Expression expression);
 
 public:
@@ -52,9 +51,11 @@ public:
   ostream& semant_error(Symbol filename, tree_node *t) override ;
   Symbol lookup_object(Symbol object) override ;
   method_class *lookup_method(Symbol method) override ;
-  Class_ get_active_class() override ;
-  MethodTable *get_method_table() override ;
+  Class_ get_active_class() override;
+  void set_active_class(Class_ cls) override;
+  MethodTable *get_method_table() override;
   ObjectTable *get_object_table() override ;
+  std::multimap<Class_, Class_> *get_child_graph() override;
   bool is_subtype(Symbol clazz_b, Symbol clazz_a) override ;
   Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op) override ;
   Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current) override ;

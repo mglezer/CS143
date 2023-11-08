@@ -172,13 +172,10 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     Features features = main_class->get_features();
     bool main_method_found = false;
     for (int i = features->first(); features->more(i); i = features->next(i)) {
-        Feature_class *feat = features->nth(i);
-        if (typeid(*feat) == typeid(method_class)) {
-            method_class* method = dynamic_cast<method_class *>(feat);
-            if (method->get_name() == main_meth) {
-                main_method_found = true;
-                break;
-            }
+        Feature feat = features->nth(i);
+        if (feat->is_method() && feat->get_name() == main_meth) {
+            main_method_found = true;
+            break;
         }
     }
     if (!main_method_found) {
@@ -192,8 +189,9 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     // methods.
     std::list<Class_> top_level_classes;
     for (const auto &pair : parent_graph) {
-        bool inherits_from_built_in_class = built_in_classes.find(pair.second->get_name()) != built_in_classes.end();
-        if (inherits_from_built_in_class) {
+        bool inherits_from_user_defined_class = built_in_classes.find(pair.second->get_name()) == built_in_classes.end();
+        bool is_user_defined_class = built_in_classes.find(pair.first->get_name()) == built_in_classes.end();
+        if (is_user_defined_class && !inherits_from_user_defined_class) {
             top_level_classes.push_back(pair.first);
         }
     }
@@ -204,111 +202,118 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         method_table.enterscope();
         object_table.enterscope();
         object_table.addid(self, SELF_TYPE);
-        type_check_class(cls);
+        cls->type_check(this);
         method_table.exitscope();
         object_table.exitscope();
     }
 }
 
-void ClassTable::type_check_class(Class_ cls) {
-    active_class = cls;
-
-    // First add all features to the scope.
-    Features features = cls->get_features();
+void Class__class::type_check(TypeChecker *type_checker) {
+    Class_ old_class = type_checker->get_active_class();
+    type_checker->set_active_class(this);
+    Features features = get_features();
     for (int i = features->first(); features->more(i); i = features->next(i)) {
-        Feature_class *feat = features->nth(i);
-        if (typeid(*feat) == typeid(attr_class)) {
-            attr_class* attr = dynamic_cast<attr_class *>(feat);
-            Symbol declared_type = attr->get_type_decl();
-            if (object_table.probe(attr->get_name()) != NULL) {
-                semant_error(cls->get_filename(), feat) << "Attribute " << attr->get_name() << " is multiply defined in class." << endl;
-                continue;
-            } else if (object_table.lookup(attr->get_name()) != NULL) {
-                semant_error(cls->get_filename(), feat) << "Attribute " << attr->get_name() << " is an attribute of an inherited class." << endl;
-                continue;
-            }
-            object_table.addid(attr->get_name(), declared_type);
-        } else if (typeid(*feat) == typeid(method_class)) {
-            method_class* method = dynamic_cast<method_class *>(feat);
-            if (method_table.probe(method->get_name()) != NULL) {
-                semant_error(cls->get_filename(), feat) << "Method " << method->get_name() << " is multiply defined." << endl;
-                continue;
-            } else if (method_class *ancestor_method = method_table.lookup(method->get_name()); ancestor_method != NULL) {
-                // The formals and return type need to be exactly the same.
-                if (ancestor_method->get_return_type() != method->get_return_type()) {
-                    semant_error(cls->get_filename(), feat) << "In redefined method " << method->get_name() << ", return type " << method->get_return_type() << " is different from original return type " << ancestor_method->get_return_type() << "." << endl;
-                    continue;
-                }
-                Formals ancestor_formals = ancestor_method->get_formals();
-                Formals child_formals = method->get_formals();
-                if (ancestor_formals->len() != child_formals->len()) {
-                    semant_error(cls->get_filename(), feat) << "Incompatible number of formal parameters in redefined method " << method->get_name() << endl;
-                    continue;
-                }
-                for (int i = child_formals->first(); child_formals->more(i); i = child_formals->next(i)) {
-                    // The name of the formal can differ, but the type cannot.
-                    formal_class *ancestor_formal = dynamic_cast<formal_class *>(ancestor_formals->nth(i));
-                    formal_class *child_formal = dynamic_cast<formal_class *>(child_formals->nth(i));
-                    if (ancestor_formal->get_type_decl() != child_formal->get_type_decl()) {
-                        semant_error(cls->get_filename(), feat) << "In redefined method " << method->get_name() << " parameter type " << child_formal->get_type_decl() << " is different from original type " << ancestor_formal->get_type_decl() << "." << endl;
-                        continue;
-                    }
-                }
-            }
-            method_table.addid(method->get_name(), method);
-        } else {
-            // Attributes and methods are the only possible children of a class.
-            assert(false);
-        }
+        Feature feature = features->nth(i);
+        feature->observe_feature(type_checker);
     }
-
-    // Once the class-level scope is initialized, we can evaluate all attribute expressions.
     for (int i = features->first(); features->more(i); i = features->next(i)) {
-        Feature_class *feat = features->nth(i);
-        if (typeid(*feat) == typeid(attr_class)) {
-            attr_class* attr = dynamic_cast<attr_class *>(feat);
-            Expression expr = attr->get_expression();
-            if (!attr->get_expression()->is_empty()) {
-                Symbol declared_type = attr->get_type_decl();
-                Symbol inferred_type = expr->check_type(this);
-                if (!is_subtype(inferred_type, declared_type)) {
-                    semant_error(cls->get_filename(), feat) << "Inferred type " << inferred_type << " of initialization of attribute " << attr->get_name() << " does not conform to declared type " << declared_type << "." << endl;
-                } else {
-                    expr->set_type(inferred_type);
-                }
-            }
-        } else if (typeid(*feat) == typeid(method_class)) {
-            method_class* method = dynamic_cast<method_class *>(feat);
-            Expression expr = method->get_expression();
-            if (typeid(*method->get_expression()) != typeid(no_expr_class)) {
-                object_table.enterscope();
-                Formals formals = method->get_formals();
-                for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
-                   Formal formal = formals->nth(i); 
-                   object_table.addid(formal->get_name(), formal->get_type_decl());
-                }
-                Symbol declared_type = method->get_return_type();
-                Symbol inferred_type = expr->check_type(this);
-                if (!is_subtype(inferred_type, declared_type)) {
-                    semant_error(cls->get_filename(), feat) << "Inferred return type " << inferred_type << " of method " << method->get_name() << " does not conform to declared type " << declared_type << "." << endl;
-                } else {
-                    expr->set_type(inferred_type);
-                }
-                object_table.exitscope();
-            }
-        }
+        Feature feature = features->nth(i);
+        feature->check_feature(type_checker);
     }
-
     std::pair<std::multimap<Class_, Class_>::iterator, 
-std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
+std::multimap<Class_, Class_>::iterator> ret = type_checker->get_child_graph()->equal_range(this);
+    MethodTable *method_table = type_checker->get_method_table();
+    ObjectTable *object_table = type_checker->get_object_table();
     for (std::multimap<Class_, Class_>::iterator it = ret.first; it != ret.second; ++it) {
-        method_table.enterscope();
-        object_table.enterscope();
-        type_check_class(it->second);
-        method_table.exitscope();
-        object_table.exitscope();
+        Class_ child_class = it->second;
+        method_table->enterscope();
+        object_table->enterscope();
+        child_class->type_check(type_checker);
+        method_table->exitscope();
+        object_table->exitscope();
     }
+    type_checker->set_active_class(old_class);
+}
 
+
+void attr_class::observe_feature(TypeChecker *type_checker) {
+    Symbol declared_type = this->get_type_decl();
+    Class_ cls = type_checker->get_active_class();
+    ObjectTable *object_table = type_checker->get_object_table();
+    if (object_table->probe(this->get_name()) != NULL) {
+        type_checker->semant_error(cls->get_filename(), this) << "Attribute " << this->get_name() << " is multiply defined in class." << endl;
+        return;
+    } else if (object_table->lookup(this->get_name()) != NULL) {
+        type_checker->semant_error(cls->get_filename(), this) << "Attribute " << this->get_name() << " is an attribute of an inherited class." << endl;
+        return;
+    }
+    object_table->addid(this->get_name(), declared_type);
+}
+
+void attr_class::check_feature(TypeChecker *type_checker) {
+    Expression expr = this->get_expression();
+    Class_ cls = type_checker->get_active_class();
+    if (!this->get_expression()->is_empty()) {
+        Symbol declared_type = this->get_type_decl();
+        Symbol inferred_type = expr->check_type(type_checker);
+        if (!type_checker->is_subtype(inferred_type, declared_type)) {
+            type_checker->semant_error(cls->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of attribute " << this->get_name() << " does not conform to declared type " << declared_type << "." << endl;
+        } else {
+            expr->set_type(inferred_type);
+        }
+    }
+}
+
+void method_class::observe_feature(TypeChecker *type_checker) {
+    MethodTable *method_table = type_checker->get_method_table();
+    Class_ cls = type_checker->get_active_class();
+    if (method_table->probe(this->get_name()) != NULL) {
+        type_checker->semant_error(cls->get_filename(), this) << "Method " << this->get_name() << " is multiply defined." << endl;
+        return;
+    } else if (method_class *ancestor_method = method_table->lookup(this->get_name()); ancestor_method != NULL) {
+        // The formals and return type need to be exactly the same.
+        if (ancestor_method->get_return_type() != this->get_return_type()) {
+            type_checker->semant_error(cls->get_filename(), this) << "In redefined method " << this->get_name() << ", return type " << this->get_return_type() << " is different from original return type " << ancestor_method->get_return_type() << "." << endl;
+            return;
+        }
+        Formals ancestor_formals = ancestor_method->get_formals();
+        Formals child_formals = this->get_formals();
+        if (ancestor_formals->len() != child_formals->len()) {
+            type_checker->semant_error(cls->get_filename(), this) << "Incompatible number of formal parameters in redefined method " << this->get_name() << endl;
+            return;
+        }
+        for (int i = child_formals->first(); child_formals->more(i); i = child_formals->next(i)) {
+            // The name of the formal can differ, but the type cannot.
+            Formal ancestor_formal = ancestor_formals->nth(i);
+            Formal child_formal = child_formals->nth(i);
+            if (ancestor_formal->get_type_decl() != child_formal->get_type_decl()) {
+                type_checker->semant_error(cls->get_filename(), this) << "In redefined method " << this->get_name() << " parameter type " << child_formal->get_type_decl() << " is different from original type " << ancestor_formal->get_type_decl() << "." << endl;
+                return;
+            }
+        }
+    }
+    method_table->addid(this->get_name(), this);
+}
+
+void method_class::check_feature(TypeChecker *type_checker) {
+    Expression expr = this->get_expression();
+    ObjectTable *object_table = type_checker->get_object_table();
+    if (typeid(*this->get_expression()) != typeid(no_expr_class)) {
+        object_table->enterscope();
+        Formals formals = this->get_formals();
+        for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+            Formal formal = formals->nth(i); 
+            object_table->addid(formal->get_name(), formal->get_type_decl());
+        }
+        Symbol declared_type = this->get_return_type();
+        Symbol inferred_type = expr->check_type(type_checker);
+        if (!type_checker->is_subtype(inferred_type, declared_type)) {
+            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred return type " << inferred_type << " of method " << this->get_name() << " does not conform to declared type " << declared_type << "." << endl;
+        } else {
+            expr->set_type(inferred_type);
+        }
+        object_table->exitscope();
+    }
 }
 
 Symbol dispatch_class::check_type(TypeChecker *type_checker) {
@@ -377,11 +382,8 @@ method_class *ClassTable::find_method(Symbol class_name, Symbol method_name) {
         Features features = cls->get_features();
         for (int i = features->first(); features->more(i); i = features->next(i)) {
             Feature feat = features->nth(i);
-            if (typeid(*feat) == typeid(method_class)) {
-                method_class *method = dynamic_cast<method_class *>(feat);
-                if (method->get_name() == method_name) {
-                    return method;
-                }
+            if (feat->is_method() && feat->get_name() == method_name) {
+                return dynamic_cast<method_class *>(feat);
             }
         }
         // If we cannot find the method defined in the class, try the parent class;
@@ -639,6 +641,14 @@ method_class *ClassTable::lookup_method(Symbol method) {
 
 Class_ ClassTable::get_active_class() {
     return active_class;
+}
+
+void ClassTable::set_active_class(Class_ cls) {
+    active_class = cls;
+}
+
+std::multimap<Class_, Class_> *ClassTable::get_child_graph() {
+    return &child_graph;
 }
 
 MethodTable *ClassTable::get_method_table() {
