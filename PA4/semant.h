@@ -20,7 +20,7 @@ typedef ClassTable *ClassTableP;
 // you like: it is only here to provide a container for the supplied
 // methods.
 
-class ClassTable {
+class ClassTable : public TypeChecker {
 private:
   int semant_errors;
   void install_basic_classes();
@@ -49,18 +49,18 @@ public:
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
-  ostream& semant_error(Symbol filename, tree_node *t);
-  Symbol lookup_object(Symbol object);
-  method_class *lookup_method(Symbol method);
-  Class_ get_active_class();
-  MethodTable *get_method_table();
-  ObjectTable *get_object_table();
-  bool is_subtype(Symbol clazz_b, Symbol clazz_a);
-  Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op);
-  Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current);
-  Symbol least_upper_bound(std::set<Symbol> nodes);
-  method_class *find_method(Symbol class_name, Symbol method_name);
-  Symbol validate_dispatch(Expression dispatch, Expression expr, Symbol static_type, Symbol method_name, Expressions arguments);
+  ostream& semant_error(Symbol filename, tree_node *t) override ;
+  Symbol lookup_object(Symbol object) override ;
+  method_class *lookup_method(Symbol method) override ;
+  Class_ get_active_class() override ;
+  MethodTable *get_method_table() override ;
+  ObjectTable *get_object_table() override ;
+  bool is_subtype(Symbol clazz_b, Symbol clazz_a) override ;
+  Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op) override ;
+  Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current) override ;
+  Symbol least_upper_bound(std::set<Symbol> nodes) override ;
+  method_class *find_method(Symbol class_name, Symbol method_name) override ;
+  Symbol validate_dispatch(Expression dispatch, Expression expr, Symbol static_type, Symbol method_name, Expressions arguments) override ;
 };
 
 

@@ -10,12 +10,29 @@
 
 
 #include "tree.h"
+#include <set>
 #include "cool-tree.handcode.h"
 #include <symtab.h>
 
 class method_class;
 typedef class SymbolTable<Symbol, method_class> MethodTable;
 typedef class SymbolTable<Symbol, Entry> ObjectTable;
+
+class TypeChecker {
+    public:
+        virtual ostream& semant_error(Symbol filename, tree_node *t) = 0;
+        virtual Symbol lookup_object(Symbol object) = 0;
+        virtual method_class *lookup_method(Symbol method) = 0;
+        virtual Class_ get_active_class() = 0;
+        virtual MethodTable *get_method_table() = 0;
+        virtual ObjectTable *get_object_table() = 0;
+        virtual bool is_subtype(Symbol clazz_b, Symbol clazz_a) = 0;
+        virtual Symbol verify_arith(Expression expr, Symbol type, Symbol a, Symbol b, std::string op) = 0;
+        virtual Symbol least_upper_bound(std::set<Symbol> nodes, Symbol current) = 0;
+        virtual Symbol least_upper_bound(std::set<Symbol> nodes) = 0;
+        virtual method_class *find_method(Symbol class_name, Symbol method_name) = 0;
+        virtual Symbol validate_dispatch(Expression dispatch, Expression expr, Symbol static_type, Symbol method_name, Expressions arguments) = 0;
+};
 
 
 // define the class for phylum
@@ -87,7 +104,7 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
-   virtual Symbol check_type(void *ptr) = 0;
+   virtual Symbol check_type(TypeChecker *ptr) = 0;
    virtual bool is_empty() { return false; }
 
 
@@ -105,7 +122,7 @@ class Case_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Case(); }
    virtual Case copy_Case() = 0;
-   virtual Symbol check_type(void *ptr) = 0;
+   virtual Symbol check_type(TypeChecker *ptr) = 0;
    virtual Symbol get_type_decl() = 0;
 
 #ifdef Case_EXTRAS
@@ -285,7 +302,7 @@ public:
    }
    Case copy_Case();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
    Symbol get_type_decl() {
        return type_decl;
    }
@@ -311,7 +328,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -338,7 +355,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -363,7 +380,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -388,7 +405,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 
 #ifdef Expression_SHARED_EXTRAS
@@ -412,7 +429,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 
 #ifdef Expression_SHARED_EXTRAS
@@ -436,7 +453,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -457,7 +474,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -484,7 +501,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -507,7 +524,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -530,7 +547,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -553,7 +570,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -576,7 +593,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -597,7 +614,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -620,7 +637,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -643,7 +660,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -666,7 +683,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -687,7 +704,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -708,7 +725,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -729,7 +746,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -750,7 +767,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 
 #ifdef Expression_SHARED_EXTRAS
@@ -772,7 +789,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -793,7 +810,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -812,7 +829,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
    bool is_empty() { return true; }
 
 #ifdef Expression_SHARED_EXTRAS
@@ -834,7 +851,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Symbol check_type(void *ptr);
+   Symbol check_type(TypeChecker *ptr);
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
