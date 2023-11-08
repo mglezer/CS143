@@ -417,6 +417,9 @@ Symbol typcase_class::check_type(void *ptr) {
 
 Symbol branch_class::check_type(void *ptr) {
     ClassTable *class_table = (ClassTable *)ptr;
+    if (type_decl == SELF_TYPE) {
+        class_table->semant_error(class_table->get_active_class()->get_filename(), this) << "Identifier " << name << " declared with type SELF_TYPE in case branch." << endl;
+    }
     // Evaluate the expression with the case object added to the scope.
     ObjectTable *object_table = class_table->get_object_table();
     object_table->enterscope();
@@ -476,11 +479,7 @@ Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
     if (nodes.count(current) > 0) {
         // The current node is one of the nodes we're looking for, so it or something above it
         // must be the LUB.
-        // This has higher precedence than the SELF_TYPE check below.
         return current;
-    }
-    if (nodes.count(SELF_TYPE) > 0 && current == active_class->get_name()) {
-        return SELF_TYPE;
     }
     std::list<Symbol> ancestors;
     std::map<Symbol, Class_>::iterator it = class_by_name.find(current);
@@ -494,6 +493,13 @@ std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
             ancestors.push_back(candidate);
         }
     }
+    if (nodes.count(SELF_TYPE) > 0 && current == active_class->get_name()) {
+        // SELF_TYPE is treated like another child of current (since it is always <= current).
+        // If there are any other descendants of current amongst the nodes, then the LUB must be 
+        // >= current; otherwise the LUB could be SELF_TYPE itself.
+        ancestors.push_back(SELF_TYPE);
+    }
+
     assert(ancestors.size() <= nodes.size());
     if (ancestors.size() >= 2) {
         return current;
