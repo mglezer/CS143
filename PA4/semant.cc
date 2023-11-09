@@ -104,7 +104,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
         Symbol child = cls->get_name();
 
         // Step 1b: Make sure no classes inherit from Int, String or Bool.
-        if (parent == Bool || parent == Int || parent == Str) {
+        if (parent == Bool || parent == Int || parent == Str || parent == SELF_TYPE) {
             semant_error(cls) << "Class " << child << " cannot inherit class " << parent << "." << endl;
             return;
         }
@@ -128,9 +128,11 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
                 std::map<Symbol, Class_>::iterator parent_iterator = class_by_name.find(parent_name);
                 if (parent_iterator == class_by_name.end()) {
                     semant_error(cls) << "Class " << name << " inherits from an undefined class " << parent_name << "." << endl;
+                    return;
+                } else {
+                    parent_graph.insert(std::pair(cls, parent_iterator->second));
+                    child_graph.insert(std::pair(parent_iterator->second, cls));
                 }
-                parent_graph.insert(std::pair(cls, parent_iterator->second));
-                child_graph.insert(std::pair(parent_iterator->second, cls));
             } else {
                 child_graph.insert(std::pair(Object_class, cls));
                 parent_graph.insert(std::pair(cls, Object_class));
@@ -298,20 +300,35 @@ void method_class::observe_feature(TypeChecker *type_checker) {
 void method_class::check_feature(TypeChecker *type_checker) {
     Expression expr = this->get_expression();
     ObjectTable *object_table = type_checker->get_object_table();
-    if (typeid(*this->get_expression()) != typeid(no_expr_class)) {
+    if (!this->get_expression()->is_empty()) {
         object_table->enterscope();
         Formals formals = this->get_formals();
         for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
             Formal formal = formals->nth(i); 
+            if (formal->get_name() == self) {
+                type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "'self' cannot be the name of a formal parameter." << endl;
+                continue;
+            }
+            if (formal->get_type_decl() == SELF_TYPE) {
+                type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Formal parameter " << formal->get_name() << " cannot have type " << SELF_TYPE << "."  << endl;
+            }
+            if (object_table->probe(formal->get_name()) != NULL) {
+                type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Formal parameter " << formal->get_name() << " is multiply defined." << endl;
+            }
             object_table->addid(formal->get_name(), formal->get_type_decl());
         }
         Symbol declared_type = this->get_return_type();
-        Symbol inferred_type = expr->check_type(type_checker);
-        if (!type_checker->is_subtype(inferred_type, declared_type)) {
-            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred return type " << inferred_type << " of method " << this->get_name() << " does not conform to declared return type " << declared_type << "." << endl;
-        } else {
-            expr->set_type(inferred_type);
+        std::map<Symbol, Class_> *class_by_name = type_checker->get_class_by_name();
+        bool undefined_return_type = false;
+        if (class_by_name->find(declared_type) == class_by_name->end()) {
+            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Undefined return type " << declared_type << " in method " << this->get_name() << "." << endl;
+            undefined_return_type = true;
         }
+        Symbol inferred_type = expr->check_type(type_checker);
+        if (!undefined_return_type && !type_checker->is_subtype(inferred_type, declared_type)) {
+            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred return type " << inferred_type << " of method " << this->get_name() << " does not conform to declared return type " << declared_type << "." << endl;
+        } 
+        expr->set_type(inferred_type);
         object_table->exitscope();
     }
 }
@@ -346,8 +363,12 @@ Symbol ClassTable::validate_dispatch(Expression dispatch, Expression expr, Symbo
     if (class_name == SELF_TYPE) {
         class_name = get_active_class()->get_name();
     }
-    method_class *method = find_method(class_name, method_name);
     Class_ cls = get_active_class();
+    if (get_class_by_name()->count(class_name) == 0) {
+        semant_error(cls->get_filename(), dispatch) << std::string(is_static ? "Static dispatch " : "Dispatch ") << "on undefined class " << class_name << "." << endl;
+        return Object;
+    }
+    method_class *method = find_method(class_name, method_name);
     if (method == NULL) {
         // The method does not exist.
         semant_error(cls->get_filename(), dispatch) << std::string(is_static ? "Static dispatch " : "Dispatch ") << "to undefined method " << method_name << "." << endl;
@@ -417,6 +438,8 @@ Symbol typcase_class::check_type(TypeChecker *type_checker) {
 Symbol branch_class::check_type(TypeChecker *type_checker) {
     if (type_decl == SELF_TYPE) {
         type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Identifier " << name << " declared with type SELF_TYPE in case branch." << endl;
+    } else if (type_checker->get_class_by_name()->count(type_decl) == 0) {
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Class " << type_decl << " of case branch is undefined." << endl;
     }
     // Evaluate the expression with the case object added to the scope.
     ObjectTable *object_table = type_checker->get_object_table();
@@ -507,15 +530,26 @@ std::multimap<Class_, Class_>::iterator> ret = child_graph.equal_range(cls);
 
 Symbol let_class::check_type(TypeChecker *type_checker) {
     // The initialization expression is evaluated before the object is added to the scope.
+    bool has_binding_to_self = identifier == self;
+
+    bool invalid_type = false;
+    if (type_checker->get_class_by_name()->count(type_decl) == 0) {
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Class " << type_decl << " of let-bound identifier " << identifier << " is undefined."  << endl;
+        invalid_type = true;
+    }
     if (!init->is_empty()) {
         Symbol inferred_type = init->check_type(type_checker);
-        if (!type_checker->is_subtype(inferred_type, type_decl)) {
+        if (!invalid_type && !type_checker->is_subtype(inferred_type, type_decl)) {
             type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of " << identifier << " does not conform to identifier's declared type " << type_decl << "." << endl;
         }
     }
     ObjectTable *object_table = type_checker->get_object_table();
     object_table->enterscope();
-    object_table->addid(identifier, type_decl);
+    if (has_binding_to_self) {
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "'self' cannot be bound in a 'let' expression." << endl;
+    } else {
+        object_table->addid(identifier, type_decl);
+    }
     Symbol body_type = body->check_type(type_checker);
     object_table->exitscope();
     set_type(body_type);
@@ -529,6 +563,9 @@ Symbol no_expr_class::check_type(TypeChecker *type_checker) {
 Symbol assign_class::check_type(TypeChecker *type_checker) {
     Symbol inferred_type = expr->check_type(type_checker);
     Symbol decl_type = type_checker->get_object_table()->lookup(name);
+    if (name == self) {
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Cannot assign to 'self'." << endl;
+    }
     if (!type_checker->is_subtype(inferred_type, decl_type)) {
         type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Type " << inferred_type << " of assigned expression does not conform to declared type " << decl_type << " of identifier " << name << "." << endl;
     }
@@ -547,6 +584,7 @@ Symbol object_class::check_type(TypeChecker *type_checker) {
 }
 
 Symbol isvoid_class::check_type(TypeChecker *type_checker) {
+    e1->check_type(type_checker); 
     set_type(Bool);
     return Bool;
 }
@@ -612,8 +650,15 @@ Symbol block_class::check_type(TypeChecker *type_checker) {
 }
 
 Symbol new__class::check_type(TypeChecker *type_checker) {
-    set_type(type_name);
-    return type_name;
+    std::map<Symbol, Class_> *class_by_name = type_checker->get_class_by_name();
+    if (class_by_name->find(type_name) == class_by_name->end()) {
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "'new' used with undefined class " << type_name << "." << endl;
+        set_type(Object);
+        return Object;
+    } else {
+        set_type(type_name);
+        return type_name;
+    }
 }
 
 Symbol int_const_class::check_type(TypeChecker *type_checker) {
@@ -647,6 +692,10 @@ void ClassTable::set_active_class(Class_ cls) {
     active_class = cls;
 }
 
+std::map<Symbol, Class_> *ClassTable::get_class_by_name() {
+    return &class_by_name;
+}
+
 std::multimap<Class_, Class_> *ClassTable::get_child_graph() {
     return &child_graph;
 }
@@ -671,7 +720,11 @@ bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
     }
     std::map<Symbol, Class_>::iterator it_b = class_by_name.find(class_name_b);
     std::map<Symbol, Class_>::iterator it_a = class_by_name.find(class_name_a);
-    // Both classes should be valid names which exist in the map.
+    // If either class doesn't exist, one cannot be a subtype of the other.
+    if (it_b == class_by_name.end() || it_a == class_by_name.end()) {
+        return false;
+    }
+
     assert(it_b != class_by_name.end());
     assert(it_a != class_by_name.end());
     Class_ class_b = it_b->second;

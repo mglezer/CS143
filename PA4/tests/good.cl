@@ -12,13 +12,13 @@ class C {
     type_name: String <- a.type_name();
     eq: Bool <- 4 = 5;
     obj: Object <- d;
+    slf: SELF_TYPE <- if 1 < 0 then self else self fi;
     cs: C <- case d of
-        c: SELF_TYPE => c;
+        c: C => c;
         d: D => d;
         e: E => e;
-        o: Object => o;
     esac;
-    other_c : D <- cs;
+    other_c : C <- cs;
     letty: Int <- let neu: Int <- 5, d: Int <- 8 in neu + d;
     loopy: Object <- while false loop 5 pool;
     cond: Object <- if b then self else self fi;
@@ -35,6 +35,7 @@ class C {
 };
 
 class D inherits C {
+    meth(): C { new Abc };
     get_copy(n: Int) : D { new D };
 };
 

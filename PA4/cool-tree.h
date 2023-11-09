@@ -25,6 +25,7 @@ class TypeChecker {
         virtual Symbol lookup_object(Symbol object) = 0;
         virtual method_class *lookup_method(Symbol method) = 0;
         virtual Class_ get_active_class() = 0;
+        virtual std::map<Symbol, Class_> *get_class_by_name() = 0;
         virtual void set_active_class(Class_ cls) = 0;
         virtual std::multimap<Class_, Class_> *get_child_graph() = 0;
         virtual MethodTable *get_method_table() = 0;

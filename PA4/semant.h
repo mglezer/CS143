@@ -51,6 +51,7 @@ public:
   ostream& semant_error(Symbol filename, tree_node *t) override ;
   Symbol lookup_object(Symbol object) override ;
   method_class *lookup_method(Symbol method) override ;
+  std::map<Symbol, Class_> *get_class_by_name() override;
   Class_ get_active_class() override;
   void set_active_class(Class_ cls) override;
   MethodTable *get_method_table() override;

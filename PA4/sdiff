@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -e
 
-diff <(./mysemant $1 2>&1) <(./theirsemant $1 2>&1);
+diff <(./mysemant $1 2>&1 | sort) <(./theirsemant $1 2>&1 | sort)

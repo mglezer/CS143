@@ -7,7 +7,17 @@ class B inherits A {
     inherited_method2(o: Object): Int { 5 };
 };
 
-class BB inherits B {};
+class BB inherits B {
+    dup_args(a: Int, a: String): Int { 5 };
+    bb: BB;
+    blahblah: B <- let o: XX <- new B, b: B <- new B in o + 5;
+    meth(self: B): BB {
+        bb <- self
+    };
+    meth2(x: SELF_TYPE): BB {
+        x <- 5
+    };
+};
 
 class C inherits B {
 	a : Int <- "abc";
@@ -28,6 +38,7 @@ class C inherits B {
         c@B.inherited_method(4);
     }};
     bad_dispatch(o: Object, b: B): Object {{
+        self <- x;
         o.inherited_method(5);
         b.xyz(2);
         c.inherited_method(4);
@@ -40,6 +51,7 @@ class C inherits B {
     esac;
     cs_dup: B <- case a of 
         bb: BB => bb;
+        x: XX => x;
         c: C => c;
         c: C => c;
         slf: SELF_TYPE => slf;
@@ -63,7 +75,7 @@ class C inherits B {
         o <- 5;
         o <- new Object;
     }};
-    lt: B <- let o: Object, b: B <- new B in b;
+    lt: B <- let o: SELF_TYPE, b: B <- new B in b;
     isv: Bool <- isvoid a;
     cmp: Int <- ~5;
 	init(x : Int, y : Bool) : C {

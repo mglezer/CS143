@@ -3,3 +3,5 @@ cgen
 lexer
 parser
 semant
+grading
+*.s
