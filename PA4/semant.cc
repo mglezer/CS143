@@ -279,7 +279,7 @@ void method_class::observe_feature(TypeChecker *type_checker) {
         Formals ancestor_formals = ancestor_method->get_formals();
         Formals child_formals = this->get_formals();
         if (ancestor_formals->len() != child_formals->len()) {
-            type_checker->semant_error(cls->get_filename(), this) << "Incompatible number of formal parameters in redefined method " << this->get_name() << endl;
+            type_checker->semant_error(cls->get_filename(), this) << "Incompatible number of formal parameters in redefined method " << this->get_name() << "." << endl;
             return;
         }
         for (int i = child_formals->first(); child_formals->more(i); i = child_formals->next(i)) {
@@ -287,7 +287,7 @@ void method_class::observe_feature(TypeChecker *type_checker) {
             Formal ancestor_formal = ancestor_formals->nth(i);
             Formal child_formal = child_formals->nth(i);
             if (ancestor_formal->get_type_decl() != child_formal->get_type_decl()) {
-                type_checker->semant_error(cls->get_filename(), this) << "In redefined method " << this->get_name() << " parameter type " << child_formal->get_type_decl() << " is different from original type " << ancestor_formal->get_type_decl() << "." << endl;
+                type_checker->semant_error(cls->get_filename(), this) << "In redefined method " << this->get_name() << ", parameter type " << child_formal->get_type_decl() << " is different from original type " << ancestor_formal->get_type_decl() <<  endl;
                 return;
             }
         }
@@ -308,7 +308,7 @@ void method_class::check_feature(TypeChecker *type_checker) {
         Symbol declared_type = this->get_return_type();
         Symbol inferred_type = expr->check_type(type_checker);
         if (!type_checker->is_subtype(inferred_type, declared_type)) {
-            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred return type " << inferred_type << " of method " << this->get_name() << " does not conform to declared type " << declared_type << "." << endl;
+            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Inferred return type " << inferred_type << " of method " << this->get_name() << " does not conform to declared return type " << declared_type << "." << endl;
         } else {
             expr->set_type(inferred_type);
         }
@@ -406,7 +406,7 @@ Symbol typcase_class::check_type(TypeChecker *type_checker) {
         expr_types.insert(cs->check_type(type_checker));
         Symbol decl_type = cs->get_type_decl();
         if (!decl_types.insert(decl_type).second) {
-            type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Duplicate branch " << decl_type << " in case statement." << endl;
+            type_checker->semant_error(type_checker->get_active_class()->get_filename(), cs) << "Duplicate branch " << decl_type << " in case statement." << endl;
         }
     }
     Symbol lub = type_checker->least_upper_bound(expr_types);
@@ -554,7 +554,7 @@ Symbol isvoid_class::check_type(TypeChecker *type_checker) {
 Symbol comp_class::check_type(TypeChecker *type_checker) {
     Symbol type = e1->check_type(type_checker);
     if (type != Bool) {
-        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Argument of not has type " << type << " instead of Bool." << endl;
+        type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Argument of 'not' has type " << type << " instead of Bool." << endl;
     }
     set_type(Bool);
     return Bool;
