@@ -493,9 +493,6 @@ Symbol cond_class::check_type(TypeChecker *type_checker) {
 }
 
 Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes) {
-    if (nodes.size() == 1) {
-        return *nodes.cbegin();
-    }
     std::set<Symbol> defined_types;
     for (const auto &node : nodes) {
         if (class_by_name.count(node) != 0) {
