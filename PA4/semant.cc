@@ -258,6 +258,9 @@ void attr_class::check_feature(TypeChecker *type_checker) {
     if (!this->get_expression()->is_empty()) {
         Symbol declared_type = this->get_type_decl();
         Symbol inferred_type = expr->check_type(type_checker);
+        if (type_checker->get_class_by_name()->count(declared_type) == 0) {
+            type_checker->semant_error(cls->get_filename(), this) << "Class " << declared_type << " of attribute " << this->get_name() << " is undefined." << endl;
+        }
         if (!type_checker->is_subtype(inferred_type, declared_type)) {
             type_checker->semant_error(cls->get_filename(), this) << "Inferred type " << inferred_type << " of initialization of attribute " << this->get_name() << " does not conform to declared type " << declared_type << "." << endl;
         } else {
@@ -314,6 +317,9 @@ void method_class::check_feature(TypeChecker *type_checker) {
             }
             if (object_table->probe(formal->get_name()) != NULL) {
                 type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Formal parameter " << formal->get_name() << " is multiply defined." << endl;
+            }
+            if (type_checker->get_class_by_name()->count(formal->get_type_decl()) == 0) {
+                type_checker->semant_error(type_checker->get_active_class()->get_filename(), this) << "Class " << formal->get_type_decl() << " of formal parameter " << formal->get_name() << " is undefined." << endl;
             }
             object_table->addid(formal->get_name(), formal->get_type_decl());
         }
@@ -487,7 +493,19 @@ Symbol cond_class::check_type(TypeChecker *type_checker) {
 }
 
 Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes) {
-    return least_upper_bound(nodes, Object);
+    if (nodes.size() == 1) {
+        return *nodes.cbegin();
+    }
+    std::set<Symbol> defined_types;
+    for (const auto &node : nodes) {
+        if (class_by_name.count(node) != 0) {
+            defined_types.insert(node);
+        }
+    }
+    if (defined_types.size() == 0) {
+        return No_type;
+    }
+    return least_upper_bound(defined_types, Object);
 }
 
 Symbol ClassTable::least_upper_bound(std::set<Symbol> nodes, Symbol current) {
@@ -720,9 +738,9 @@ bool ClassTable::is_subtype(Symbol class_name_b, Symbol class_name_a) {
     }
     std::map<Symbol, Class_>::iterator it_b = class_by_name.find(class_name_b);
     std::map<Symbol, Class_>::iterator it_a = class_by_name.find(class_name_a);
-    // If either class doesn't exist, one cannot be a subtype of the other.
     if (it_b == class_by_name.end() || it_a == class_by_name.end()) {
-        return false;
+        // To avoid cascading failures, we consider UKNOWN <= a and b <= UNKNOWN.
+        return true;
     }
 
     assert(it_b != class_by_name.end());
