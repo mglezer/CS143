@@ -1,0 +1,6 @@
+*.d
+*.s
+cgen
+lexer
+parser
+semant
