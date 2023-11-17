@@ -8,7 +8,7 @@
 //
 //////////////////////////////////////////////////////////
 
-
+#include <list>
 #include "tree.h"
 #include "cool-tree.handcode.h"
 
@@ -31,10 +31,15 @@ public:
 // define simple phylum - Class_
 typedef class Class__class *Class_;
 
+class method_class;
+class attr_class;
+
 class Class__class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Class_(); }
    virtual Class_ copy_Class_() = 0;
+   virtual std::list<method_class *> get_methods() = 0;
+   virtual std::list<attr_class *> get_attributes() = 0;
 
 #ifdef Class__EXTRAS
    Class__EXTRAS
@@ -49,6 +54,7 @@ class Feature_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
+   virtual Symbol get_name() = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -145,32 +151,6 @@ public:
 };
 
 
-// define constructor - class_
-class class__class : public Class__class {
-public:
-   Symbol name;
-   Symbol parent;
-   Features features;
-   Symbol filename;
-public:
-   class__class(Symbol a1, Symbol a2, Features a3, Symbol a4) {
-      name = a1;
-      parent = a2;
-      features = a3;
-      filename = a4;
-   }
-   Class_ copy_Class_();
-   void dump(ostream& stream, int n);
-
-#ifdef Class__SHARED_EXTRAS
-   Class__SHARED_EXTRAS
-#endif
-#ifdef class__EXTRAS
-   class__EXTRAS
-#endif
-};
-
-
 // define constructor - method
 class method_class : public Feature_class {
 public:
@@ -187,6 +167,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() override {
+       return name;
+   }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -211,6 +194,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   Symbol get_name() override {
+       return name;
+   }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -219,6 +205,54 @@ public:
    attr_EXTRAS
 #endif
 };
+
+// define constructor - class_
+class class__class : public Class__class {
+public:
+   Symbol name;
+   Symbol parent;
+   Features features;
+   Symbol filename;
+public:
+   class__class(Symbol a1, Symbol a2, Features a3, Symbol a4) {
+      name = a1;
+      parent = a2;
+      features = a3;
+      filename = a4;
+   }
+   Class_ copy_Class_();
+   void dump(ostream& stream, int n);
+
+   std::list<method_class *> get_methods() override {
+       std::list<method_class *> methods;
+       for (int i = features->first(); features->more(i); i = features->next(i)) {
+           Feature feature = features->nth(i);
+           if (typeid(*feature) == typeid(method_class)) {
+               methods.push_back(dynamic_cast<method_class *>(feature));
+           }
+       }
+       return methods;
+   }
+
+   std::list<attr_class *> get_attributes() override {
+       std::list<attr_class *> attrs;
+       for (int i = features->first(); features->more(i); i = features->next(i)) {
+           Feature feature = features->nth(i);
+           if (typeid(*feature) == typeid(attr_class)) {
+               attrs.push_back(dynamic_cast<attr_class *>(feature));
+           }
+       }
+       return attrs;
+   }
+
+#ifdef Class__SHARED_EXTRAS
+   Class__SHARED_EXTRAS
+#endif
+#ifdef class__EXTRAS
+   class__EXTRAS
+#endif
+};
+
 
 
 // define constructor - formal

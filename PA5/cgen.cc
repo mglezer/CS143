@@ -22,6 +22,7 @@
 //
 //**************************************************************
 
+#include <map>
 #include "cgen.h"
 #include "cgen_gc.h"
 
@@ -354,6 +355,22 @@ static void emit_gc_check(char *source, ostream &s)
   s << JAL << "_gc_check" << endl;
 }
 
+class ClassTag {
+    private:
+        int curr_tag = 5;
+
+    public:
+        static const int OBJECT = 0;
+        static const int IO = 1;
+        static const int INT = 2;
+        static const int BOOL = 3;
+        static const int STRING = 4;
+
+        int get_new_tag() {
+            // Assign then increment.
+            return curr_tag++;
+        }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -619,15 +636,16 @@ void CgenClassTable::code_constants()
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = 0 /* Change to your String class tag here */;
-   intclasstag =    0 /* Change to your Int class tag here */;
-   boolclasstag =   0 /* Change to your Bool class tag here */;
+   stringclasstag = ClassTag::STRING;
+   intclasstag =    ClassTag::INT;
+   boolclasstag =   ClassTag::BOOL;
 
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
    install_basic_classes();
    install_classes(classes);
    build_inheritance_tree();
+   determine_offsets();
 
    code();
    exitscope();
@@ -803,6 +821,30 @@ void CgenClassTable::set_relations(CgenNodeP nd)
   parent_node->add_child(nd);
 }
 
+//
+// CgenClassTable::determine_offsets
+//
+void CgenClassTable::determine_offsets()
+{
+    determine_offsets(root(), 0, 0);
+}
+
+void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset)
+{
+    method_indices.enterscope();
+    attr_offsets.enterscope();
+    std::pair<int, int> pair = curr->set_offsets(&method_indices, &attr_offsets, starting_method_index, starting_attr_offset);
+    starting_method_index = pair.first;
+    starting_attr_offset = pair.second;
+    List<CgenNode> *child = curr->get_children();
+    while (child != NULL) {
+        determine_offsets(child->hd(), starting_method_index, starting_attr_offset);
+        child = child->tl();
+    }
+    method_indices.exitscope();
+    attr_offsets.exitscope();
+}
+
 void CgenNode::add_child(CgenNodeP n)
 {
   children = new List<CgenNode>(n,children);
@@ -815,6 +857,38 @@ void CgenNode::set_parentnd(CgenNodeP p)
   parentnd = p;
 }
 
+std::pair<int, int> CgenNode::set_offsets(MethodTable *method_indices, AttributeTable *attr_offsets, int starting_method_index, int starting_attr_offset) {
+    // Initialize the offsets so we start where the parent class left off.
+    this->next_method_index = starting_method_index;
+    this->next_attr_offset = starting_attr_offset;
+
+    for (const auto &method : get_methods()) {
+        Symbol name = method->get_name();
+        if (method_indices->probe(name)) {
+            // A duplicate method is defined in the class, which should be impossible at this stage.
+            assert(false);
+        }
+        int *existing_index = method_indices->lookup(name);
+        if (!existing_index) {
+            method_indices->addid(name, new int(get_and_increment_method_index()));
+        }
+    }
+    for (const auto &attr : get_attributes()) {
+        Symbol name = attr->get_name();
+        if (attr_offsets->probe(name)) {
+            // A duplicate method is defined in the class, which should be impossible at this stage.
+            assert(false);
+        }
+        int *existing_offset = attr_offsets->lookup(name);
+        int offset;
+        if (!existing_offset) {
+            attr_offsets->addid(name, new int(get_and_increment_attr_offset()));
+        }
+    }
+    this->method_indices = *method_indices; // create an independent copy
+    this->attr_offsets = *attr_offsets; // create an independent copy
+    return std::pair<int, int>(next_method_index, next_attr_offset);
+}
 
 
 void CgenClassTable::code()

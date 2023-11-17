@@ -14,6 +14,8 @@ typedef CgenClassTable *CgenClassTableP;
 class CgenNode;
 typedef CgenNode *CgenNodeP;
 
+class MethodTable : public SymbolTable<Symbol, int> {};
+class AttributeTable : public SymbolTable<Symbol, int> {};
 class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
 private:
    List<CgenNode> *nds;
@@ -21,6 +23,8 @@ private:
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
+   MethodTable method_indices;
+   AttributeTable attr_offsets;
 
 
 // The following methods emit code for
@@ -42,6 +46,8 @@ private:
    void install_classes(Classes cs);
    void build_inheritance_tree();
    void set_relations(CgenNodeP nd);
+   void determine_offsets();
+   void determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset);
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
@@ -55,6 +61,10 @@ private:
    List<CgenNode> *children;                  // Children of class
    Basicness basic_status;                    // `Basic' if class is basic
                                               // `NotBasic' otherwise
+   int next_method_index = 0;
+   int next_attr_offset = 0;
+   MethodTable method_indices;
+   AttributeTable attr_offsets;
 
 public:
    CgenNode(Class_ c,
@@ -66,6 +76,9 @@ public:
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
+   std::pair<int, int> set_offsets(MethodTable *methodTable, AttributeTable *attributeTable, int starting_method_index, int starting_attr_offset);
+   int get_and_increment_method_index() { return next_method_index++; }
+   int get_and_increment_attr_offset() { int val = next_attr_offset; next_attr_offset += 4; return val; }
 };
 
 class BoolConst 
