@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <vector>
 #include "emit.h"
 #include "cool-tree.h"
 #include "symtab.h"
@@ -14,16 +15,42 @@ typedef CgenClassTable *CgenClassTableP;
 class CgenNode;
 typedef CgenNode *CgenNodeP;
 
-class MethodTable : public SymbolTable<Symbol, int> {};
+class ClassTag {
+    private:
+        std::vector<Symbol> class_names;
+        int curr_tag = 5;
+
+    public:
+        static const int OBJECT = 0;
+        static const int IO = 1;
+        static const int INT = 2;
+        static const int BOOL = 3;
+        static const int STRING = 4;
+
+        int get_new_tag(Symbol class_name) {
+            // Assign then increment.
+            class_names[curr_tag] = class_name;
+            return curr_tag++;
+        }
+
+        std::vector<Symbol> *get_class_names() {
+            return &class_names;
+        }
+};
+
+class MethodIdxTable : public SymbolTable<Symbol, int> {};
+class MethodImplTable : public SymbolTable<Symbol, std::string> {};
 class AttributeTable : public SymbolTable<Symbol, int> {};
 class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
+
 private:
    List<CgenNode> *nds;
    ostream& str;
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
-   MethodTable method_indices;
+   MethodIdxTable method_indices;
+   MethodImplTable method_impls;
    AttributeTable attr_offsets;
 
 
@@ -48,6 +75,7 @@ private:
    void set_relations(CgenNodeP nd);
    void determine_offsets();
    void determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset);
+   void generate_dispatch_tables();
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
@@ -63,7 +91,9 @@ private:
                                               // `NotBasic' otherwise
    int next_method_index = 0;
    int next_attr_offset = 0;
-   MethodTable method_indices;
+
+   MethodIdxTable method_indices;
+   MethodImplTable method_impls;
    AttributeTable attr_offsets;
 
 public:
@@ -76,9 +106,10 @@ public:
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
-   std::pair<int, int> set_offsets(MethodTable *methodTable, AttributeTable *attributeTable, int starting_method_index, int starting_attr_offset);
+   std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, AttributeTable *attributeTable, int starting_method_index, int starting_attr_offset);
    int get_and_increment_method_index() { return next_method_index++; }
    int get_and_increment_attr_offset() { int val = next_attr_offset; next_attr_offset += 4; return val; }
+   void generate_dispatch_table(ostream &s);
 };
 
 class BoolConst 

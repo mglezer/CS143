@@ -15,6 +15,7 @@
 #define _SYMTAB_H_
 
 #include "list.h"
+#include <list>
 
 //
 // SymtabEnty<SYM,DAT> defines the entry for a symbol table that associates
@@ -162,6 +163,17 @@ public:
             cerr << "  " << j->hd()->get_id() << " " << *(j->hd()->get_info()) << endl;
          }
       }
+   }
+
+   std::list<ScopeEntry*> *flattened_entries() {
+       std::list<ScopeEntry*> *list = new std::list<ScopeEntry *>();
+      for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
+         for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
+             // Reverse order, since methods defined in base classes should come last in iteration order.
+             list->push_front(j->hd());
+         }
+      }
+      return list;
    }
  
 };

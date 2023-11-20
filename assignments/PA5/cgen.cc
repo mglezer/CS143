@@ -355,23 +355,6 @@ static void emit_gc_check(char *source, ostream &s)
   s << JAL << "_gc_check" << endl;
 }
 
-class ClassTag {
-    private:
-        int curr_tag = 5;
-
-    public:
-        static const int OBJECT = 0;
-        static const int IO = 1;
-        static const int INT = 2;
-        static const int BOOL = 3;
-        static const int STRING = 4;
-
-        int get_new_tag() {
-            // Assign then increment.
-            return curr_tag++;
-        }
-};
-
 ///////////////////////////////////////////////////////////////////////////////
 //
 // coding strings, ints, and booleans
@@ -829,11 +812,28 @@ void CgenClassTable::determine_offsets()
     determine_offsets(root(), 0, 0);
 }
 
+void CgenClassTable::generate_dispatch_tables() {
+    while (nds != NULL) {
+        CgenNode *nd = nds->hd();
+        nd->generate_dispatch_table(str);
+        nds = nds->tl();
+    }
+}
+
+void CgenNode::generate_dispatch_table(ostream &s) {
+    s << name << "_dispTab" << LABEL;
+    std::list<SymtabEntry<Symbol, int>*> *entries = method_indices.flattened_entries();
+    for (const auto &entry : *entries) {
+        s << WORD << *method_impls.lookup(entry->get_id()) << endl;
+    }
+}
+
 void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset)
 {
     method_indices.enterscope();
     attr_offsets.enterscope();
-    std::pair<int, int> pair = curr->set_offsets(&method_indices, &attr_offsets, starting_method_index, starting_attr_offset);
+    method_impls.enterscope();
+    std::pair<int, int> pair = curr->determine_offsets(&method_indices, &method_impls, &attr_offsets, starting_method_index, starting_attr_offset);
     starting_method_index = pair.first;
     starting_attr_offset = pair.second;
     List<CgenNode> *child = curr->get_children();
@@ -841,6 +841,7 @@ void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index
         determine_offsets(child->hd(), starting_method_index, starting_attr_offset);
         child = child->tl();
     }
+    method_impls.exitscope();
     method_indices.exitscope();
     attr_offsets.exitscope();
 }
@@ -857,7 +858,11 @@ void CgenNode::set_parentnd(CgenNodeP p)
   parentnd = p;
 }
 
-std::pair<int, int> CgenNode::set_offsets(MethodTable *method_indices, AttributeTable *attr_offsets, int starting_method_index, int starting_attr_offset) {
+std::string *to_method_label(class__class *clz, method_class *method) {
+    return new std::string(std::string(clz->get_name()->get_string()) + "." + std::string(method->get_name()->get_string()));
+}
+
+std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, AttributeTable *attr_offsets, int starting_method_index, int starting_attr_offset) {
     // Initialize the offsets so we start where the parent class left off.
     this->next_method_index = starting_method_index;
     this->next_attr_offset = starting_attr_offset;
@@ -872,6 +877,9 @@ std::pair<int, int> CgenNode::set_offsets(MethodTable *method_indices, Attribute
         if (!existing_index) {
             method_indices->addid(name, new int(get_and_increment_method_index()));
         }
+        // Unlike the method index, the method label will get overridden if there is an overriding
+        // implementation in a child class.
+        method_impls->addid(name, to_method_label(this, method));
     }
     for (const auto &attr : get_attributes()) {
         Symbol name = attr->get_name();
@@ -885,8 +893,12 @@ std::pair<int, int> CgenNode::set_offsets(MethodTable *method_indices, Attribute
             attr_offsets->addid(name, new int(get_and_increment_attr_offset()));
         }
     }
-    this->method_indices = *method_indices; // create an independent copy
-    this->attr_offsets = *attr_offsets; // create an independent copy
+
+    // Create independent copies.
+    this->method_indices = *method_indices; 
+    this->attr_offsets = *attr_offsets; 
+    this->method_impls = *method_impls; 
+
     return std::pair<int, int>(next_method_index, next_attr_offset);
 }
 
@@ -901,6 +913,9 @@ void CgenClassTable::code()
 
   if (cgen_debug) cout << "coding constants" << endl;
   code_constants();
+
+  if (cgen_debug) cout << "generating dispatch tables" << endl;
+  generate_dispatch_tables();
 
 //                 Add your code to emit
 //                   - prototype objects
