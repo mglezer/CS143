@@ -15,25 +15,40 @@ typedef CgenClassTable *CgenClassTableP;
 class CgenNode;
 typedef CgenNode *CgenNodeP;
 
-class ClassTag {
+class ClassTagTable {
     private:
-        std::vector<Symbol> class_names;
-        int curr_tag = 5;
+        // Unfortnately std::map does not keep track of insertion order,
+        // and we need a data structure that allows lookup by tag number as well as
+        // printing out all entries ordered by tag number. A simple vector works OK
+        // at the expense of O(N) lookup.
+        std::vector<StringEntry *> class_names;
 
     public:
         static const int OBJECT = 0;
-        static const int IO = 1;
+        static const int IO_ = 1;
         static const int INT = 2;
         static const int BOOL = 3;
         static const int STRING = 4;
 
-        int get_new_tag(Symbol class_name) {
+        void init();
+
+        int assign_tag(StringEntry *class_name) {
             // Assign then increment.
-            class_names[curr_tag] = class_name;
-            return curr_tag++;
+            class_names.push_back(class_name);
+            return class_names.size() - 1;
         }
 
-        std::vector<Symbol> *get_class_names() {
+        int get_tag(StringEntry *class_name) {
+            for (int i = 0; i < class_names.size(); i++) {
+                if (class_names[i] == class_name) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+
+        std::vector<StringEntry *> *get_class_names() {
             return &class_names;
         }
 };
@@ -52,6 +67,7 @@ private:
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
    AttributeTable attr_offsets;
+   ClassTagTable class_tag_table;
 
 
 // The following methods emit code for
@@ -76,6 +92,8 @@ private:
    void determine_offsets();
    void determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset);
    void generate_dispatch_tables();
+   void assign_class_tags();
+   void generate_class_name_table();
 public:
    CgenClassTable(Classes, ostream& str);
    void code();

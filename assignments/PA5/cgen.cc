@@ -616,17 +616,26 @@ void CgenClassTable::code_constants()
   code_bools(boolclasstag);
 }
 
+void ClassTagTable::init() {
+    assign_tag(stringtable.lookup_string(Object->get_string()));
+    assign_tag(stringtable.lookup_string(IO->get_string()));
+    assign_tag(stringtable.lookup_string(Int->get_string()));
+    assign_tag(stringtable.lookup_string(Bool->get_string()));
+    assign_tag(stringtable.lookup_string(Str->get_string()));
+}
+
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = ClassTag::STRING;
-   intclasstag =    ClassTag::INT;
-   boolclasstag =   ClassTag::BOOL;
+   stringclasstag = ClassTagTable::STRING;
+   intclasstag =    ClassTagTable::INT;
+   boolclasstag =   ClassTagTable::BOOL;
 
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
    install_basic_classes();
    install_classes(classes);
+   class_tag_table.init();
    build_inheritance_tree();
    determine_offsets();
 
@@ -812,11 +821,33 @@ void CgenClassTable::determine_offsets()
     determine_offsets(root(), 0, 0);
 }
 
+void CgenClassTable::assign_class_tags() {
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        CgenNode *nd = curr->hd();
+        if (!nd->basic()) {
+            StringEntry *entry = static_cast<StringEntry *>(stringtable.lookup_string(nd->get_name()->get_string()));
+            class_tag_table.assign_tag(entry);
+        }
+        curr = curr->tl();
+    }
+}
+
+void CgenClassTable::generate_class_name_table() {
+    str << "class_nameTab" << LABEL;
+    std::vector<StringEntry *> *class_names = class_tag_table.get_class_names();
+    for (int i = 0; i < class_names->size(); i++) {
+        str << WORD;
+        (*class_names)[i]->code_ref(str);
+        str << endl;
+    }
+}
+
 void CgenClassTable::generate_dispatch_tables() {
-    while (nds != NULL) {
-        CgenNode *nd = nds->hd();
-        nd->generate_dispatch_table(str);
-        nds = nds->tl();
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        curr->hd()->generate_dispatch_table(str);
+        curr = curr->tl();
     }
 }
 
@@ -916,6 +947,8 @@ void CgenClassTable::code()
 
   if (cgen_debug) cout << "generating dispatch tables" << endl;
   generate_dispatch_tables();
+  assign_class_tags();
+  generate_class_name_table();
 
 //                 Add your code to emit
 //                   - prototype objects
