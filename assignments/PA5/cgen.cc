@@ -131,8 +131,10 @@ void write_default_value_for_attr(CgenNode *cls, ostream &s) {
         static_cast<StringEntry *>(stringtable.lookup_string(""))->code_ref(s);
     } else if (cls->get_name() == Bool) {
         falsebool.code_ref(s); 
-    } else {
+    } else if (cls->get_name() == Int) {
         static_cast<IntEntry *>(inttable.lookup_string("0"))->code_ref(s);
+    } else {
+        s << 0;
     }
     s << endl;
 }
