@@ -169,12 +169,23 @@ public:
        std::list<ScopeEntry*> *list = new std::list<ScopeEntry *>();
       for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
          for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
-             // Reverse order, since methods defined in base classes should come last in iteration order.
+             // Reverse order, so the most recent elements come last.
              list->push_front(j->hd());
          }
       }
       return list;
    }
+
+   int count() {
+       int count = 0;
+       for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
+           for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
+               count++;
+           }
+       }
+       return count;
+   }
+
  
 };
 

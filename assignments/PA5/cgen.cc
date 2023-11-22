@@ -117,6 +117,27 @@ static char *gc_collect_names[] =
 BoolConst falsebool(FALSE);
 BoolConst truebool(TRUE);
 
+std::string *get_dispatch_label(Symbol class_name) {
+    return new std::string(std::string(class_name->get_string()) + "_dispTab");
+}
+
+std::string *get_proto_label(Symbol class_name) {
+    return new std::string(std::string(class_name->get_string()) + "_protoObj");
+}
+
+void write_default_value_for_attr(CgenNode *cls, ostream &s) {
+    s << WORD;
+    if (cls->get_name() == Str) {
+        static_cast<StringEntry *>(stringtable.lookup_string(""))->code_ref(s);
+    } else if (cls->get_name() == Bool) {
+        falsebool.code_ref(s); 
+    } else {
+        static_cast<IntEntry *>(inttable.lookup_string("0"))->code_ref(s);
+    }
+    s << endl;
+}
+
+
 //*********************************************************
 //
 // Define method for code generation
@@ -394,17 +415,13 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
   IntEntryP lensym = inttable.add_int(len);
 
   // Add -1 eye catcher
-  s << WORD << "-1" << endl;
+  s << WORD << GC_TAG << endl;
 
   code_ref(s);  s  << LABEL                                             // label
       << WORD << stringclasstag << endl                                 // tag
       << WORD << (DEFAULT_OBJFIELDS + STRING_SLOTS + (len+4)/4) << endl // size
-      << WORD;
+      << WORD << *get_dispatch_label(Str) << endl;
 
-
- /***** Add dispatch information for class String ******/
-
-      s << endl;                                              // dispatch table
       s << WORD;  lensym->code_ref(s);  s << endl;            // string length
   emit_string_constant(s,str);                                // ascii string
   s << ALIGN;                                                 // align to word
@@ -437,16 +454,13 @@ void IntEntry::code_ref(ostream &s)
 void IntEntry::code_def(ostream &s, int intclasstag)
 {
   // Add -1 eye catcher
-  s << WORD << "-1" << endl;
+  s << WORD << GC_TAG << endl;
 
   code_ref(s);  s << LABEL                                // label
       << WORD << intclasstag << endl                      // class tag
       << WORD << (DEFAULT_OBJFIELDS + INT_SLOTS) << endl  // object size
-      << WORD; 
+      << WORD << *get_dispatch_label(Int) << endl;
 
- /***** Add dispatch information for class Int ******/
-
-      s << endl;                                          // dispatch table
       s << WORD << str << endl;                           // integer value
 }
 
@@ -481,16 +495,13 @@ void BoolConst::code_ref(ostream& s) const
 void BoolConst::code_def(ostream& s, int boolclasstag)
 {
   // Add -1 eye catcher
-  s << WORD << "-1" << endl;
+  s << WORD << GC_TAG << endl;
 
   code_ref(s);  s << LABEL                                  // label
       << WORD << boolclasstag << endl                       // class tag
       << WORD << (DEFAULT_OBJFIELDS + BOOL_SLOTS) << endl   // object size
-      << WORD;
+      << WORD << *get_dispatch_label(Bool) << endl;
 
- /***** Add dispatch information for class Bool ******/
-
-      s << endl;                                            // dispatch table
       s << WORD << val << endl;                             // value (0 or 1)
 }
 
@@ -877,6 +888,31 @@ void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index
     attr_offsets.exitscope();
 }
 
+
+void CgenClassTable::generate_proto_objects() {
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        CgenNode *curr_class = curr->hd();
+
+        int tag = class_tag_table.get_tag(static_cast<StringEntry *>(stringtable.lookup_string(curr_class->get_name()->get_string())));
+
+        str << WORD << GC_TAG << endl;
+
+        str << *get_proto_label(curr_class->get_name()) << LABEL
+            << WORD << tag << endl  // class tag
+            << WORD <<  DEFAULT_OBJFIELDS + curr_class->get_attr_offsets().count() << endl   // object size
+            << WORD << *get_dispatch_label(curr_class->get_name()) << endl;
+
+        std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = curr_class->get_attr_offsets().flattened_entries();
+        for (const auto &entry : *entries) {
+            CgenNode *attr_cls = lookup(entry->get_info()->get_class_name());
+            assert(attr_cls != NULL);
+            write_default_value_for_attr(attr_cls, str);
+        }
+        curr = curr->tl();
+    }
+}
+
 void CgenNode::add_child(CgenNodeP n)
 {
   children = new List<CgenNode>(n,children);
@@ -918,10 +954,10 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
             // A duplicate method is defined in the class, which should be impossible at this stage.
             assert(false);
         }
-        int *existing_offset = attr_offsets->lookup(name);
+        AttributeInfo *existing_offset = attr_offsets->lookup(name);
         int offset;
         if (!existing_offset) {
-            attr_offsets->addid(name, new int(get_and_increment_attr_offset()));
+            attr_offsets->addid(name, new AttributeInfo(get_and_increment_attr_offset(), attr->get_type()));
         }
     }
 
@@ -949,6 +985,7 @@ void CgenClassTable::code()
   generate_dispatch_tables();
   assign_class_tags();
   generate_class_name_table();
+  generate_proto_objects();
 
 //                 Add your code to emit
 //                   - prototype objects

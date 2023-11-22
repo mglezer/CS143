@@ -17,7 +17,7 @@ typedef CgenNode *CgenNodeP;
 
 class ClassTagTable {
     private:
-        // Unfortnately std::map does not keep track of insertion order,
+        // Unfortunately std::map does not keep track of insertion order,
         // and we need a data structure that allows lookup by tag number as well as
         // printing out all entries ordered by tag number. A simple vector works OK
         // at the expense of O(N) lookup.
@@ -53,9 +53,29 @@ class ClassTagTable {
         }
 };
 
+class AttributeInfo {
+    private:
+    int offset;
+    Symbol class_name;
+
+    public:
+    AttributeInfo(int offset, Symbol class_name) {
+        this->offset = offset;
+        this->class_name = class_name;
+    }
+    
+    int get_offset() {
+        return offset;
+    }
+
+    Symbol get_class_name() {
+        return class_name;
+    }
+};
+
 class MethodIdxTable : public SymbolTable<Symbol, int> {};
 class MethodImplTable : public SymbolTable<Symbol, std::string> {};
-class AttributeTable : public SymbolTable<Symbol, int> {};
+class AttributeTable : public SymbolTable<Symbol, AttributeInfo> {};
 class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
 
 private:
@@ -92,8 +112,10 @@ private:
    void determine_offsets();
    void determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset);
    void generate_dispatch_tables();
+   void generate_proto_objects();
    void assign_class_tags();
    void generate_class_name_table();
+
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
@@ -128,6 +150,9 @@ public:
    int get_and_increment_method_index() { return next_method_index++; }
    int get_and_increment_attr_offset() { int val = next_attr_offset; next_attr_offset += 4; return val; }
    void generate_dispatch_table(ostream &s);
+   AttributeTable get_attr_offsets() {
+       return attr_offsets;
+   }
 };
 
 class BoolConst 

@@ -197,6 +197,10 @@ public:
    Symbol get_name() override {
        return name;
    }
+   Symbol get_type() {
+       return type_decl;
+   }
+
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS

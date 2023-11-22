@@ -39,6 +39,7 @@
 
 #define EMPTYSLOT            0
 #define LABEL                ":\n"
+#define GC_TAG               "-1"
 
 #define STRINGNAME (char *) "String"
 #define INTNAME    (char *) "Int"
