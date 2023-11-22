@@ -834,6 +834,17 @@ void CgenClassTable::determine_offsets()
     determine_offsets(root(), 0, 0);
 }
 
+void CgenClassTable::generate_class_name_table() {
+    assign_class_tags();
+    str << CLASSNAMETAB << LABEL;
+    std::vector<StringEntry *> *class_names = class_tag_table.get_class_names();
+    for (int i = 0; i < class_names->size(); i++) {
+        str << WORD;
+        (*class_names)[i]->code_ref(str);
+        str << endl;
+    }
+}
+
 void CgenClassTable::assign_class_tags() {
     List<CgenNode> *curr = nds;
     while (curr != NULL) {
@@ -846,15 +857,16 @@ void CgenClassTable::assign_class_tags() {
     }
 }
 
-void CgenClassTable::generate_class_name_table() {
-    str << "class_nameTab" << LABEL;
+void CgenClassTable::generate_class_object_table() {
+    str << CLASSOBJTAB << LABEL;
+    List<CgenNode> *curr = nds;
     std::vector<StringEntry *> *class_names = class_tag_table.get_class_names();
     for (int i = 0; i < class_names->size(); i++) {
-        str << WORD;
-        (*class_names)[i]->code_ref(str);
-        str << endl;
+        str << WORD << (*class_names)[i] << DISPTAB_SUFFIX << endl;
+        str << WORD << (*class_names)[i] << CLASSINIT_SUFFIX << endl;
     }
 }
+
 
 void CgenClassTable::generate_dispatch_tables() {
     List<CgenNode> *curr = nds;
@@ -865,7 +877,7 @@ void CgenClassTable::generate_dispatch_tables() {
 }
 
 void CgenNode::generate_dispatch_table(ostream &s) {
-    s << name << "_dispTab" << LABEL;
+    s << name << DISPTAB_SUFFIX << LABEL;
     std::list<SymtabEntry<Symbol, int>*> *entries = method_indices.flattened_entries();
     for (const auto &entry : *entries) {
         s << WORD << *method_impls.lookup(entry->get_id()) << endl;
@@ -984,16 +996,10 @@ void CgenClassTable::code()
   code_constants();
 
   if (cgen_debug) cout << "generating dispatch tables" << endl;
-  generate_dispatch_tables();
-  assign_class_tags();
   generate_class_name_table();
+  generate_class_object_table();
+  generate_dispatch_tables();
   generate_proto_objects();
-
-//                 Add your code to emit
-//                   - prototype objects
-//                   - class_nameTab
-//                   - dispatch tables
-//
 
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();

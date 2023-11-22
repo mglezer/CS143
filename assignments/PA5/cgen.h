@@ -115,6 +115,7 @@ private:
    void generate_proto_objects();
    void assign_class_tags();
    void generate_class_name_table();
+   void generate_class_object_table();
 
 public:
    CgenClassTable(Classes, ostream& str);
