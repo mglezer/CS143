@@ -7,10 +7,10 @@ class A {
 class B inherits A {
     b: Bool <- true;
     meth(): Object { 5 };
-    meth2(a: Int, b: Int): Int { a + b };
+    meth2(): Int { 4 };
 };
 
 class Main {
-    b: B <- new B;
-    main(): Int { 2 + 3 };
+    x: A <- (new A).init(3, "xyz");
+    main(): Int { 0 };
 };

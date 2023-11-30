@@ -118,11 +118,19 @@ BoolConst falsebool(FALSE);
 BoolConst truebool(TRUE);
 
 std::string *get_dispatch_label(Symbol class_name) {
-    return new std::string(std::string(class_name->get_string()) + "_dispTab");
+    return new std::string(std::string(class_name->get_string()) + DISPTAB_SUFFIX);
 }
 
 std::string *get_proto_label(Symbol class_name) {
-    return new std::string(std::string(class_name->get_string()) + "_protoObj");
+    return new std::string(std::string(class_name->get_string()) + PROTOBJ_SUFFIX);
+}
+
+std::string *get_init_label(Symbol class_name) {
+    return new std::string(std::string(class_name->get_string()) + CLASSINIT_SUFFIX);
+}
+
+std::string *get_method_label(Symbol class_name, Symbol method_name) {
+    return new std::string(std::string(class_name->get_string()) + METHOD_SEP + method_name->get_string());
 }
 
 void write_default_value_for_attr(CgenNode *cls, ostream &s) {
@@ -194,7 +202,7 @@ static void emit_store(char *source_reg, int offset, char *dest_reg, ostream& s)
 static void emit_load_imm(char *dest_reg, int val, ostream& s)
 { s << LI << dest_reg << " " << val << endl; }
 
-static void emit_load_address(char *dest_reg, char *address, ostream& s)
+static void emit_load_address(char *dest_reg, const char *address, ostream& s)
 { s << LA << dest_reg << " " << address << endl; }
 
 static void emit_partial_load_address(char *dest_reg, ostream& s)
@@ -248,10 +256,10 @@ static void emit_sub(char *dest, char *src1, char *src2, ostream& s)
 static void emit_sll(char *dest, char *src1, int num, ostream& s)
 { s << SLL << dest << " " << src1 << " " << num << endl; }
 
-static void emit_jalr(char *dest, ostream& s)
+static void emit_jalr(const char *dest, ostream& s)
 { s << JALR << "\t" << dest << endl; }
 
-static void emit_jal(char *address,ostream &s)
+static void emit_jal(const char *address,ostream &s)
 { s << JAL << address << endl; }
 
 static void emit_return(ostream& s)
@@ -344,6 +352,39 @@ static void emit_push(char *reg, ostream& str)
 {
   emit_store(reg,0,SP,str);
   emit_addiu(SP,SP,-4,str);
+}
+
+//
+// Pop a word off the stack and store it in a register. The stack shrinks towards larger addresses.
+//
+static void emit_pop(char *reg, ostream& str)
+{
+  emit_addiu(SP,SP,4,str);
+  emit_load(reg,0,SP,str);
+}
+
+//
+// Pop a word off the stack and ignore its value.
+//
+static void emit_pop(ostream& str)
+{
+  emit_addiu(SP,SP,4,str);
+}
+
+//
+// Stores callee-saved registers on the stack.
+//
+static void emit_store_callee_saved_registers(ostream &str) {
+    emit_push(FP, str);
+    emit_push(RA, str);
+}
+
+//
+// Loads callee-saved registers by popping the contents of the stack.
+//
+static void emit_pop_callee_saved_registers(ostream &str) {
+    emit_pop(RA, str);
+    emit_pop(FP, str);
 }
 
 //
@@ -878,7 +919,7 @@ void CgenClassTable::generate_dispatch_tables() {
 
 void CgenNode::generate_dispatch_table(ostream &s) {
     s << name << DISPTAB_SUFFIX << LABEL;
-    std::list<SymtabEntry<Symbol, int>*> *entries = method_indices.flattened_entries();
+    std::list<SymtabEntry<Symbol, int>*> *entries = method_indices.all_flattened_entries();
     for (const auto &entry : *entries) {
         s << WORD << *method_impls.lookup(entry->get_id()) << endl;
     }
@@ -917,13 +958,102 @@ void CgenClassTable::generate_proto_objects() {
             << WORD <<  DEFAULT_OBJFIELDS + curr_class->get_attr_offsets().count() << endl   // object size
             << WORD << *get_dispatch_label(curr_class->get_name()) << endl;
 
-        std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = curr_class->get_attr_offsets().flattened_entries();
+        std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = curr_class->get_attr_offsets().all_flattened_entries();
         for (const auto &entry : *entries) {
-            CgenNode *attr_cls = lookup(entry->get_info()->get_class_name());
+            CgenNode *attr_cls = lookup(entry->get_info()->get_attr()->get_type());
             assert(attr_cls != NULL);
             write_default_value_for_attr(attr_cls, str);
         }
         curr = curr->tl();
+    }
+}
+
+void CgenClassTable::generate_init_methods() {
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        generate_init_method(curr->hd());
+        curr = curr->tl();
+    }
+}
+
+void CgenClassTable::generate_init_method(CgenNode *cls) {
+    str << cls->get_name() << CLASSINIT_SUFFIX << LABEL;
+
+    emit_store_callee_saved_registers(str);
+
+    // Store callee-saved registers on the stack.
+    // Call the parent initializer unless this is the root (Object).
+    if (cls->get_name() != Object) {
+        emit_jal(get_init_label(cls->get_parentnd()->get_name())->c_str(), str);
+    }
+
+    // Only look through the attributes that were defined in this class, not parent classes.
+    std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = cls->get_attr_offsets().top_flattened_entries();
+
+    // Iterate through attributes and initialize each to its assigned or default value.
+    for (const auto &entry : *entries) {
+        AttributeInfo *attr_info = entry->get_info();
+        attr_class *attr_cls = attr_info->get_attr();
+        Expression expr = attr_cls->get_init();
+
+        if (!expr->is_empty()) {
+            // Save the contents of $a0 on the stack.
+            emit_push(ACC, str);
+
+            // Evaluate the expression.
+            expr->code(str);
+
+            // The return value should be recorded in $a0.
+            // Store $a0 in a temporary.
+            emit_move(T1, ACC, str);
+
+            // Pop the old $a0 off the stack and load it into $a0.
+            emit_pop(ACC, str);
+
+            // Store the result at the appropriate offset from $a0.
+            emit_store(T1, attr_info->get_offset(), ACC, str);
+        }
+    }
+
+    // Restore callee-saved registers.
+    emit_pop_callee_saved_registers(str);
+
+    // Return control to the caller.
+    emit_return(str);
+}
+
+void CgenClassTable::generate_class_methods() {
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        if (!curr->hd()->basic()) {
+            curr->hd()->generate_class_methods(str);
+        }
+        curr = curr->tl();
+    }
+}
+
+void CgenNode::generate_class_methods(ostream &str) {
+    for (const auto &method : get_methods()) {
+        emit_method_ref(get_name(), method->get_name(), str);
+        str << LABEL;
+
+        emit_store_callee_saved_registers(str);
+
+        // Generate code for the expression. The value of the expression should be 
+        // stored in $a0.
+        method->get_expression()->code(str);
+
+        // Restore callee-saved registers.
+        emit_pop_callee_saved_registers(str);
+
+        // Pop the params off of the stack.
+        int num_params = method->get_formals()->len();
+        if (num_params > 0) {
+            emit_addiu(SP, SP, WORD_SIZE * num_params, str);
+        }
+
+        // Return control to the caller.
+        emit_return(str);
     }
 }
 
@@ -971,7 +1101,7 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
         AttributeInfo *existing_offset = attr_offsets->lookup(name);
         int offset;
         if (!existing_offset) {
-            attr_offsets->addid(name, new AttributeInfo(get_and_increment_attr_offset(), attr->get_type()));
+            attr_offsets->addid(name, new AttributeInfo(get_and_increment_attr_offset(), attr));
         }
     }
 
@@ -1004,11 +1134,9 @@ void CgenClassTable::code()
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
 
-//                 Add your code to emit
-//                   - object initializer
-//                   - the class methods
-//                   - etc...
+  generate_init_methods();
 
+  generate_class_methods();
 }
 
 
@@ -1069,6 +1197,22 @@ void let_class::code(ostream &s) {
 }
 
 void plus_class::code(ostream &s) {
+    // Execute the first expression; its result is in $a0.
+    e1->code(s);                
+    // Load the actual integer value into a register. The actual value is the first attribute.
+    emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+    // Execute the second expression; its result is in $a0.
+    e2->code(s);
+    // Load the actual integer value into a register.
+    emit_load(T2, DEFAULT_OBJFIELDS, ACC, s);
+    // Compute the sum and store the result in $t1.
+    emit_addu(T1, T1, T2, s);  
+    // Store the address of the prototype object in $a0.
+    emit_load_address(ACC, get_proto_label(Int)->c_str(), s);
+    // Get a fresh copy of an integer object in $a0.
+    emit_jal(get_method_label(Object, ::copy)->c_str(), s);
+    // Initialize the numerical value of the new int object to the sum.
+    emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void sub_class::code(ostream &s) {

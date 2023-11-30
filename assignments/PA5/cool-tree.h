@@ -83,6 +83,9 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
+   virtual bool is_empty() {
+       return false;
+   }
 
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
@@ -170,6 +173,13 @@ public:
    Symbol get_name() override {
        return name;
    }
+    Expression get_expression() {
+        return expr;
+    }
+
+    Formals get_formals() {
+        return formals;
+    }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -199,6 +209,9 @@ public:
    }
    Symbol get_type() {
        return type_decl;
+   }
+   Expression get_init() {
+       return init;
    }
 
 
@@ -793,6 +806,9 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   bool is_empty() override {
+       return true;
+   }
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS

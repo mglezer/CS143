@@ -56,20 +56,20 @@ class ClassTagTable {
 class AttributeInfo {
     private:
     int offset;
-    Symbol class_name;
+    attr_class *attr;
 
     public:
-    AttributeInfo(int offset, Symbol class_name) {
+    AttributeInfo(int offset, attr_class *attr) {
         this->offset = offset;
-        this->class_name = class_name;
+        this->attr = attr;
     }
     
     int get_offset() {
         return offset;
     }
 
-    Symbol get_class_name() {
-        return class_name;
+    attr_class *get_attr() {
+        return attr;
     }
 };
 
@@ -116,6 +116,9 @@ private:
    void assign_class_tags();
    void generate_class_name_table();
    void generate_class_object_table();
+   void generate_init_methods();
+   void generate_init_method(CgenNode *cls);
+   void generate_class_methods();
 
 public:
    CgenClassTable(Classes, ostream& str);
@@ -149,11 +152,13 @@ public:
    int basic() { return (basic_status == Basic); }
    std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, AttributeTable *attributeTable, int starting_method_index, int starting_attr_offset);
    int get_and_increment_method_index() { return next_method_index++; }
-   int get_and_increment_attr_offset() { int val = next_attr_offset; next_attr_offset += 4; return val; }
+   int get_and_increment_attr_offset() { return next_attr_offset++; }
    void generate_dispatch_table(ostream &s);
    AttributeTable get_attr_offsets() {
        return attr_offsets;
    }
+
+   void generate_class_methods(ostream &str);
 };
 
 class BoolConst 
