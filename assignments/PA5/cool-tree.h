@@ -503,12 +503,15 @@ public:
 #endif
 };
 
+class Binary_operation {
+    public:
+        Expression e1;
+        Expression e2;
+};
+
 
 // define constructor - plus
-class plus_class : public Expression_class {
-public:
-   Expression e1;
-   Expression e2;
+class plus_class : public Expression_class, public Binary_operation {
 public:
    plus_class(Expression a1, Expression a2) {
       e1 = a1;
@@ -527,10 +530,7 @@ public:
 
 
 // define constructor - sub
-class sub_class : public Expression_class {
-public:
-   Expression e1;
-   Expression e2;
+class sub_class : public Expression_class, public Binary_operation {
 public:
    sub_class(Expression a1, Expression a2) {
       e1 = a1;
@@ -549,10 +549,7 @@ public:
 
 
 // define constructor - mul
-class mul_class : public Expression_class {
-public:
-   Expression e1;
-   Expression e2;
+class mul_class : public Expression_class, public Binary_operation {
 public:
    mul_class(Expression a1, Expression a2) {
       e1 = a1;
@@ -571,10 +568,7 @@ public:
 
 
 // define constructor - divide
-class divide_class : public Expression_class {
-public:
-   Expression e1;
-   Expression e2;
+class divide_class : public Expression_class, public Binary_operation {
 public:
    divide_class(Expression a1, Expression a2) {
       e1 = a1;

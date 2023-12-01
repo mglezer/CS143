@@ -1196,39 +1196,47 @@ void block_class::code(ostream &s) {
 void let_class::code(ostream &s) {
 }
 
-void plus_class::code(ostream &s) {
+static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, ostream &s) {
     // Execute the first expression; its result is in $a0.
-    e1->code(s);                
+    op->e1->code(s);                
     // Load the actual integer value into a register. The actual value is the first attribute.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Store the value on the stack.
     emit_push(ACC, s);
     // Execute the second expression; its result is in $a0.
-    e2->code(s);
+    op->e2->code(s);
     // Load the actual integer value.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Restore the result of the first expression to $t1.
     emit_pop(T1, s);
-    // Compute the sum.
-    emit_addu(T1, T1, ACC, s);  
+    // Compute the operation.
+    emit_binary_op(T1, T1, ACC, s);  
     // Store the result on the stack.
     emit_push(T1, s);
     // Store the address of the prototype object in $a0.
     emit_load_address(ACC, get_proto_label(Int)->c_str(), s);
     // Get a fresh copy of an integer object in $a0.
     emit_jal(get_method_label(Object, ::copy)->c_str(), s);
+    // Restore the result of the operation to $t1.
     emit_pop(T1, s);
     // Initialize the numerical value of the new int object to the sum.
     emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
+void plus_class::code(ostream &s) {
+    emit_arith(emit_addu, this, s);
+}
+
 void sub_class::code(ostream &s) {
+    emit_arith(emit_sub, this, s);
 }
 
 void mul_class::code(ostream &s) {
+    emit_arith(emit_mul, this, s);
 }
 
 void divide_class::code(ostream &s) {
+    emit_arith(emit_div, this, s);
 }
 
 void neg_class::code(ostream &s) {
