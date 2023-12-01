@@ -618,6 +618,9 @@ void CgenClassTable::code_global_text()
   emit_init_ref(idtable.add_string("Bool"),str);
   str << endl << GLOBAL;
   emit_method_ref(idtable.add_string("Main"), idtable.add_string("main"), str);
+  if (cgen_debug) {
+      str << endl << GLOBAL << "breakpoint";
+  }
   str << endl;
 }
 
