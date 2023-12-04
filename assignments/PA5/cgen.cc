@@ -374,17 +374,21 @@ static void emit_pop(ostream& str)
 //
 // Stores callee-saved registers on the stack.
 //
-static void emit_store_callee_saved_registers(ostream &str) {
+static void setup_activation_record_for_callee(ostream &str) {
+    emit_push(ACC, str);
     emit_push(FP, str);
     emit_push(RA, str);
+    // Set up the new frame pointer to point to the first parameter on the stack.
+    emit_addiu(FP, SP, 4 * WORD_SIZE, str);
 }
 
 //
 // Loads callee-saved registers by popping the contents of the stack.
 //
-static void emit_pop_callee_saved_registers(ostream &str) {
+static void cleanup_activation_record_for_caller(ostream &str) {
     emit_pop(RA, str);
     emit_pop(FP, str);
+    emit_pop(ACC, str);
 }
 
 //
@@ -931,9 +935,9 @@ void CgenNode::generate_dispatch_table(ostream &s) {
 void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset)
 {
     method_indices.enterscope();
-    attr_offsets.enterscope();
+    variable_scope.enterscope();
     method_impls.enterscope();
-    std::pair<int, int> pair = curr->determine_offsets(&method_indices, &method_impls, &attr_offsets, starting_method_index, starting_attr_offset);
+    std::pair<int, int> pair = curr->determine_offsets(&method_indices, &method_impls, &variable_scope, starting_method_index, starting_attr_offset);
     starting_method_index = pair.first;
     starting_attr_offset = pair.second;
     List<CgenNode> *child = curr->get_children();
@@ -943,7 +947,7 @@ void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index
     }
     method_impls.exitscope();
     method_indices.exitscope();
-    attr_offsets.exitscope();
+    variable_scope.exitscope();
 }
 
 
@@ -958,12 +962,12 @@ void CgenClassTable::generate_proto_objects() {
 
         str << *get_proto_label(curr_class->get_name()) << LABEL
             << WORD << tag << endl  // class tag
-            << WORD <<  DEFAULT_OBJFIELDS + curr_class->get_attr_offsets().count() << endl   // object size
+            << WORD <<  DEFAULT_OBJFIELDS + curr_class->get_variable_scope().count() << endl   // object size
             << WORD << *get_dispatch_label(curr_class->get_name()) << endl;
 
-        std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = curr_class->get_attr_offsets().all_flattened_entries();
+        std::list<SymtabEntry<Symbol, VariableInfo>*> *entries = curr_class->get_variable_scope().all_flattened_entries();
         for (const auto &entry : *entries) {
-            CgenNode *attr_cls = lookup(entry->get_info()->get_attr()->get_type());
+            CgenNode *attr_cls = lookup(entry->get_info()->get_type());
             assert(attr_cls != NULL);
             write_default_value_for_attr(attr_cls, str);
         }
@@ -981,30 +985,31 @@ void CgenClassTable::generate_init_methods() {
 
 void CgenClassTable::generate_init_method(CgenNode *cls) {
     str << cls->get_name() << CLASSINIT_SUFFIX << LABEL;
-
-    emit_store_callee_saved_registers(str);
-
+    
     // Store callee-saved registers on the stack.
+    setup_activation_record_for_callee(str);
+
     // Call the parent initializer unless this is the root (Object).
     if (cls->get_name() != Object) {
         emit_jal(get_init_label(cls->get_parentnd()->get_name())->c_str(), str);
     }
 
     // Only look through the attributes that were defined in this class, not parent classes.
-    std::list<SymtabEntry<Symbol, AttributeInfo>*> *entries = cls->get_attr_offsets().top_flattened_entries();
+    std::list<attr_class *> attrs = cls->get_attributes();
 
     // Iterate through attributes and initialize each to its assigned or default value.
-    for (const auto &entry : *entries) {
-        AttributeInfo *attr_info = entry->get_info();
-        attr_class *attr_cls = attr_info->get_attr();
-        Expression expr = attr_cls->get_init();
+    for (const auto &attr : attrs) {
+        Expression expr = attr->get_init();
+        VariableScope scope = cls->get_variable_scope();
+        VariableInfo *attr_info = scope.lookup(attr->name);
+        assert(attr_info != NULL);
 
         if (!expr->is_empty()) {
             // Save the contents of $a0 on the stack.
             emit_push(ACC, str);
 
             // Evaluate the expression.
-            expr->code(str);
+            expr->code(scope, str);
 
             // The return value should be recorded in $a0.
             // Store $a0 in a temporary.
@@ -1019,7 +1024,7 @@ void CgenClassTable::generate_init_method(CgenNode *cls) {
     }
 
     // Restore callee-saved registers.
-    emit_pop_callee_saved_registers(str);
+    cleanup_activation_record_for_caller(str);
 
     // Return control to the caller.
     emit_return(str);
@@ -1040,14 +1045,24 @@ void CgenNode::generate_class_methods(ostream &str) {
         emit_method_ref(get_name(), method->get_name(), str);
         str << LABEL;
 
-        emit_store_callee_saved_registers(str);
+        // Save the callee-saved registers on the stack.
+        setup_activation_record_for_callee(str);
+
+        // Add the method parameters to the scope.
+        VariableScope scope = get_variable_scope();
+        scope.enterscope();
+        for (int i = method->formals->first(); method->formals->more(i); i = method->formals->next(i)) {
+            Formal_class *formal = method->formals->nth(i);
+            scope.addid(formal->get_name(), new VariableInfo(i, formal->get_type_decl(), ScopeType::PARAM));
+        }
 
         // Generate code for the expression. The value of the expression should be 
         // stored in $a0.
-        method->get_expression()->code(str);
+        method->get_expression()->code(scope, str);
+        scope.exitscope();
 
         // Restore callee-saved registers.
-        emit_pop_callee_saved_registers(str);
+        cleanup_activation_record_for_caller(str);
 
         // Pop the params off of the stack.
         int num_params = method->get_formals()->len();
@@ -1076,7 +1091,7 @@ std::string *to_method_label(class__class *clz, method_class *method) {
     return new std::string(std::string(clz->get_name()->get_string()) + "." + std::string(method->get_name()->get_string()));
 }
 
-std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, AttributeTable *attr_offsets, int starting_method_index, int starting_attr_offset) {
+std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, int starting_method_index, int starting_attr_offset) {
     // Initialize the offsets so we start where the parent class left off.
     this->next_method_index = starting_method_index;
     this->next_attr_offset = starting_attr_offset;
@@ -1097,20 +1112,21 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
     }
     for (const auto &attr : get_attributes()) {
         Symbol name = attr->get_name();
-        if (attr_offsets->probe(name)) {
+        if (variable_scope->probe(name)) {
             // A duplicate method is defined in the class, which should be impossible at this stage.
             assert(false);
         }
-        AttributeInfo *existing_offset = attr_offsets->lookup(name);
+        VariableInfo *existing_offset = variable_scope->lookup(name);
         int offset;
         if (!existing_offset) {
-            attr_offsets->addid(name, new AttributeInfo(get_and_increment_attr_offset(), attr));
+            variable_scope->addid(name, new VariableInfo(
+                        get_and_increment_attr_offset(), attr->type_decl, ScopeType::ATTRIBUTE));
         }
     }
 
     // Create independent copies.
     this->method_indices = *method_indices; 
-    this->attr_offsets = *attr_offsets; 
+    this->variable_scope = *variable_scope; 
     this->method_impls = *method_impls; 
 
     return std::pair<int, int>(next_method_index, next_attr_offset);
@@ -1175,39 +1191,44 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
 //
 //*****************************************************************
 
-void assign_class::code(ostream &s) {
+void assign_class::code(VariableScope &scope, ostream &s) {
 }
 
-void static_dispatch_class::code(ostream &s) {
+void static_dispatch_class::code(VariableScope &scope, ostream &s) {
 }
 
-void dispatch_class::code(ostream &s) {
+void dispatch_class::code(VariableScope &scope, ostream &s) {
 }
 
-void cond_class::code(ostream &s) {
+void cond_class::code(VariableScope &scope, ostream &s) {
 }
 
-void loop_class::code(ostream &s) {
+void loop_class::code(VariableScope &scope, ostream &s) {
 }
 
-void typcase_class::code(ostream &s) {
+void typcase_class::code(VariableScope &scope, ostream &s) {
 }
 
-void block_class::code(ostream &s) {
+void block_class::code(VariableScope &scope, ostream &s) {
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        body->nth(i)->code(scope, s);
+    }
+    // $a0 will contain the result of evaluating the last
+    // expression in the body.
 }
 
-void let_class::code(ostream &s) {
+void let_class::code(VariableScope &scope, ostream &s) {
 }
 
-static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, ostream &s) {
+static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, VariableScope scope, ostream &s) {
     // Execute the first expression; its result is in $a0.
-    op->e1->code(s);                
+    op->e1->code(scope, s);                
     // Load the actual integer value into a register. The actual value is the first attribute.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Store the value on the stack.
     emit_push(ACC, s);
     // Execute the second expression; its result is in $a0.
-    op->e2->code(s);
+    op->e2->code(scope, s);
     // Load the actual integer value.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Restore the result of the first expression to $t1.
@@ -1226,38 +1247,38 @@ static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Bin
     emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
-void plus_class::code(ostream &s) {
-    emit_arith(emit_addu, this, s);
+void plus_class::code(VariableScope &scope, ostream &s) {
+    emit_arith(emit_addu, this, scope, s);
 }
 
-void sub_class::code(ostream &s) {
-    emit_arith(emit_sub, this, s);
+void sub_class::code(VariableScope &scope, ostream &s) {
+    emit_arith(emit_sub, this, scope, s);
 }
 
-void mul_class::code(ostream &s) {
-    emit_arith(emit_mul, this, s);
+void mul_class::code(VariableScope &scope, ostream &s) {
+    emit_arith(emit_mul, this, scope, s);
 }
 
-void divide_class::code(ostream &s) {
-    emit_arith(emit_div, this, s);
+void divide_class::code(VariableScope &scope, ostream &s) {
+    emit_arith(emit_div, this, scope, s);
 }
 
-void neg_class::code(ostream &s) {
+void neg_class::code(VariableScope &scope, ostream &s) {
 }
 
-void lt_class::code(ostream &s) {
+void lt_class::code(VariableScope &scope, ostream &s) {
 }
 
-void eq_class::code(ostream &s) {
+void eq_class::code(VariableScope &scope, ostream &s) {
 }
 
-void leq_class::code(ostream &s) {
+void leq_class::code(VariableScope &scope, ostream &s) {
 }
 
-void comp_class::code(ostream &s) {
+void comp_class::code(VariableScope &scope, ostream &s) {
 }
 
-void int_const_class::code(ostream& s)  
+void int_const_class::code(VariableScope &scope, ostream& s)  
 {
   //
   // Need to be sure we have an IntEntry *, not an arbitrary Symbol
@@ -1265,26 +1286,47 @@ void int_const_class::code(ostream& s)
   emit_load_int(ACC,inttable.lookup_string(token->get_string()),s);
 }
 
-void string_const_class::code(ostream& s)
+void string_const_class::code(VariableScope &scope, ostream& s)
 {
   emit_load_string(ACC,stringtable.lookup_string(token->get_string()),s);
 }
 
-void bool_const_class::code(ostream& s)
+void bool_const_class::code(VariableScope &scope, ostream& s)
 {
   emit_load_bool(ACC, BoolConst(val), s);
 }
 
-void new__class::code(ostream &s) {
+void new__class::code(VariableScope &scope, ostream &s) {
 }
 
-void isvoid_class::code(ostream &s) {
+void isvoid_class::code(VariableScope &scope, ostream &s) {
 }
 
-void no_expr_class::code(ostream &s) {
+void no_expr_class::code(VariableScope &scope, ostream &s) {
 }
 
-void object_class::code(ostream &s) {
+static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
+    switch (var_info->get_scope_type()) {
+        case PARAM:
+            // Directly load the value itself from the frame pointer.
+            emit_load(dst, var_info->get_offset(), FP, s);
+            return;
+        case ATTRIBUTE:
+            // Load 'self' into $a0, located just below the frame pointer.
+            emit_load(dst, -1 , FP, s);
+            // Load the value itself.
+            emit_load(dst, var_info->get_offset(), dst, s);
+            return;
+        default:
+            // Unreachable.
+            assert(false);
+    }
+}
+
+void object_class::code(VariableScope &scope, ostream &s) {
+    VariableInfo *var_info = scope.lookup(name);
+    assert(var_info != NULL);
+    emit_load_variable(ACC, var_info, s);
 }
 
 

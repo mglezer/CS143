@@ -53,29 +53,8 @@ class ClassTagTable {
         }
 };
 
-class AttributeInfo {
-    private:
-    int offset;
-    attr_class *attr;
-
-    public:
-    AttributeInfo(int offset, attr_class *attr) {
-        this->offset = offset;
-        this->attr = attr;
-    }
-    
-    int get_offset() {
-        return offset;
-    }
-
-    attr_class *get_attr() {
-        return attr;
-    }
-};
-
 class MethodIdxTable : public SymbolTable<Symbol, int> {};
 class MethodImplTable : public SymbolTable<Symbol, std::string> {};
-class AttributeTable : public SymbolTable<Symbol, AttributeInfo> {};
 class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
 
 private:
@@ -86,7 +65,7 @@ private:
    int boolclasstag;
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
-   AttributeTable attr_offsets;
+   VariableScope variable_scope;
    ClassTagTable class_tag_table;
 
 
@@ -138,7 +117,7 @@ private:
 
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
-   AttributeTable attr_offsets;
+   VariableScope variable_scope;
 
 public:
    CgenNode(Class_ c,
@@ -150,12 +129,12 @@ public:
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
-   std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, AttributeTable *attributeTable, int starting_method_index, int starting_attr_offset);
+   std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, int starting_method_index, int starting_attr_offset);
    int get_and_increment_method_index() { return next_method_index++; }
    int get_and_increment_attr_offset() { return next_attr_offset++; }
    void generate_dispatch_table(ostream &s);
-   AttributeTable get_attr_offsets() {
-       return attr_offsets;
+   VariableScope get_variable_scope() {
+       return variable_scope;
    }
 
    void generate_class_methods(ostream &str);

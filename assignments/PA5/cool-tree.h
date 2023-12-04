@@ -11,6 +11,41 @@
 #include <list>
 #include "tree.h"
 #include "cool-tree.handcode.h"
+#include "symtab.h"
+
+enum ScopeType {
+    ATTRIBUTE,
+    PARAM
+};
+
+class VariableInfo {
+    private:
+    int offset;
+    Symbol type;
+    ScopeType scope;
+
+
+    public:
+    VariableInfo(int offset, Symbol type, ScopeType scope) {
+        this->offset = offset;
+        this->type = type;
+        this->scope = scope;
+    }
+
+    int get_offset() {
+        return offset;
+    }
+
+    Symbol get_type() {
+        return type;
+    }
+
+    ScopeType get_scope_type() {
+        return scope;
+    }
+};
+
+class VariableScope : public SymbolTable<Symbol, VariableInfo> {};
 
 
 // define the class for phylum
@@ -69,6 +104,8 @@ class Formal_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
+   virtual Symbol get_name() = 0;
+   virtual Symbol get_type_decl() = 0;
 
 #ifdef Formal_EXTRAS
    Formal_EXTRAS
@@ -284,6 +321,8 @@ public:
    }
    Formal copy_Formal();
    void dump(ostream& stream, int n);
+   Symbol get_name() override { return name; }
+   Symbol get_type_decl() override { return type_decl; }
 
 #ifdef Formal_SHARED_EXTRAS
    Formal_SHARED_EXTRAS

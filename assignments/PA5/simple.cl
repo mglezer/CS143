@@ -1,5 +1,5 @@
 class A {
-    a: Int <- 5;
+    a: Int <- 5 * 4;
     aa: String <- "abc";
     meth(): Object { new Object };
 };
@@ -11,6 +11,10 @@ class B inherits A {
 };
 
 class Main {
+    num: Int <- 7 * 3;
     b: B <- new B;
-    main(): Int { 2 + 3 };
+    main(): Int {{
+        num;
+        2 * 3;
+    }};
 };
