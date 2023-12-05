@@ -193,6 +193,28 @@ static void emit_load(char *dest_reg, int offset, char *source_reg, ostream& s)
     << endl;
 }
 
+static void emit_load_self(char *dst, ostream &s) {
+    emit_load(dst, -1, FP, s);
+}
+
+static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
+    switch (var_info->get_scope_type()) {
+        case PARAM:
+            // Directly load the value itself from the frame pointer.
+            emit_load(dst, var_info->get_offset(), FP, s);
+            return;
+        case ATTRIBUTE:
+            // Load 'self' into $a0, located just below the frame pointer.
+            emit_load_self(ACC, s);
+            // Load the value itself.
+            emit_load(dst, DEFAULT_OBJFIELDS + var_info->get_offset(), dst, s);
+            return;
+        default:
+            // Unreachable.
+            assert(false);
+    }
+}
+
 static void emit_store(char *source_reg, int offset, char *dest_reg, ostream& s)
 {
   s << SW << source_reg << " " << offset * WORD_SIZE << "(" << dest_reg << ")"
@@ -1055,6 +1077,9 @@ void CgenNode::generate_class_methods(CgenClassTable *table, ostream &str) {
             Formal_class *formal = method->formals->nth(i);
             scope.addid(formal->get_name(), new VariableInfo(i, formal->get_type_decl(), ScopeType::PARAM));
         }
+        // Bound self to the class, treating it as another parameter.
+        // The offset is -1 wrt the frame pointer.
+        scope.addid(self, new VariableInfo(-1, name, ScopeType::PARAM));
 
         // Generate code for the expression. The value of the expression should be 
         // stored in $a0.
@@ -1192,7 +1217,12 @@ CgenNode *CgenClassTable::find_class(Symbol class_name) {
     return NULL;
 }
 
-int CgenClassTable::get_method_index(Symbol static_type, Symbol method_name) {
+int CgenClassTable::get_method_index(VariableScope &scope, Symbol static_type, Symbol method_name) {
+    if (static_type == SELF_TYPE) {
+        // Resolve to the class self is bound to.
+        VariableInfo *var_info = scope.lookup(self);
+        static_type = var_info->get_type();
+    }
     CgenNode *cls = find_class(static_type);
     assert(cls != NULL);
     return cls->get_method_idx(method_name);
@@ -1230,12 +1260,16 @@ void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostrea
             emit_store(ACC, 1 + i, SP, s);
         }
     }
-    // Now evaluate the expression. The result should now be in $a0.
-    expr->code(helper, scope, s);
+    if (expr->is_empty()) {
+        emit_load_self(ACC, s);
+    } else {
+        // Now evaluate the expression. The result should now be in $a0.
+        expr->code(helper, scope, s);
+    }
     // Get the dispatch table for the target object.
     emit_load(T1, 2, ACC, s);
     // Get the offset from the dispatch table
-    int method_idx = helper->get_method_index(expr->get_type(), name);
+    int method_idx = helper->get_method_index(scope, expr->get_type(), name);
     emit_load(T1, method_idx, T1, s);
     // Call the method. The callee handles cleaning up the stack.
     emit_jalr(T1, s);
@@ -1350,24 +1384,6 @@ void isvoid_class::code(ExpressionHelper *helper, VariableScope &scope, ostream 
 }
 
 void no_expr_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
-}
-
-static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
-    switch (var_info->get_scope_type()) {
-        case PARAM:
-            // Directly load the value itself from the frame pointer.
-            emit_load(dst, var_info->get_offset(), FP, s);
-            return;
-        case ATTRIBUTE:
-            // Load 'self' into $a0, located just below the frame pointer.
-            emit_load(dst, -1 , FP, s);
-            // Load the value itself.
-            emit_load(dst, DEFAULT_OBJFIELDS + var_info->get_offset(), dst, s);
-            return;
-        default:
-            // Unreachable.
-            assert(false);
-    }
 }
 
 void object_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {

@@ -104,7 +104,7 @@ public:
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();
-   int get_method_index(Symbol static_type, Symbol method_name);
+   int get_method_index(VariableScope &scope, Symbol static_type, Symbol method_name);
 };
 
 
