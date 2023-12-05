@@ -13,6 +13,11 @@
 #include "cool-tree.handcode.h"
 #include "symtab.h"
 
+class ExpressionHelper {
+    public:
+        virtual int get_method_index(Symbol static_type, Symbol method_name) = 0;
+};
+
 enum ScopeType {
     ATTRIBUTE,
     PARAM

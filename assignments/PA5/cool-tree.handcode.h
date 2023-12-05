@@ -21,6 +21,7 @@ void assert_Symbol(Symbol b);
 Symbol copy_Symbol(Symbol b);
 
 class VariableScope;
+class ExpressionHelper;
 
 class Program_class;
 typedef Program_class *Program;
@@ -98,13 +99,13 @@ void dump_with_types(ostream& ,int);
 Symbol type;                                 \
 Symbol get_type() { return type; }           \
 Expression set_type(Symbol s) { type = s; return this; } \
-virtual void code(VariableScope&,ostream&) = 0; \
+virtual void code(ExpressionHelper *,VariableScope&,ostream&) = 0; \
 virtual void dump_with_types(ostream&,int) = 0;  \
 void dump_type(ostream&, int);               \
 Expression_class() { type = (Symbol) NULL; }
 
 #define Expression_SHARED_EXTRAS           \
-void code(VariableScope&,ostream&); 			   \
+void code(ExpressionHelper*,VariableScope&,ostream&); 			   \
 void dump_with_types(ostream&,int); 
 
 

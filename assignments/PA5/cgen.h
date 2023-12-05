@@ -55,7 +55,7 @@ class ClassTagTable {
 
 class MethodIdxTable : public SymbolTable<Symbol, int> {};
 class MethodImplTable : public SymbolTable<Symbol, std::string> {};
-class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
+class CgenClassTable : public SymbolTable<Symbol,CgenNode>, public ExpressionHelper {
 
 private:
    List<CgenNode> *nds;
@@ -98,11 +98,13 @@ private:
    void generate_init_methods();
    void generate_init_method(CgenNode *cls);
    void generate_class_methods();
+   CgenNode *find_class(Symbol class_name);
 
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();
+   int get_method_index(Symbol static_type, Symbol method_name);
 };
 
 
@@ -136,8 +138,13 @@ public:
    VariableScope get_variable_scope() {
        return variable_scope;
    }
+   int get_method_idx(Symbol method) {
+       int *val = method_indices.lookup(method);
+       assert(val != NULL);
+       return *val;
+   }
 
-   void generate_class_methods(ostream &str);
+   void generate_class_methods(CgenClassTable *table, ostream &str);
 };
 
 class BoolConst 

@@ -388,7 +388,7 @@ static void setup_activation_record_for_callee(ostream &str) {
 static void cleanup_activation_record_for_caller(ostream &str) {
     emit_pop(RA, str);
     emit_pop(FP, str);
-    emit_pop(ACC, str);
+    emit_pop(str); // Simply discard the old $a0 value; $a0 is now holding the return value.
 }
 
 //
@@ -1009,7 +1009,7 @@ void CgenClassTable::generate_init_method(CgenNode *cls) {
             emit_push(ACC, str);
 
             // Evaluate the expression.
-            expr->code(scope, str);
+            expr->code(this, scope, str);
 
             // The return value should be recorded in $a0.
             // Store $a0 in a temporary.
@@ -1019,7 +1019,7 @@ void CgenClassTable::generate_init_method(CgenNode *cls) {
             emit_pop(ACC, str);
 
             // Store the result at the appropriate offset from $a0.
-            emit_store(T1, attr_info->get_offset(), ACC, str);
+            emit_store(T1, DEFAULT_OBJFIELDS + attr_info->get_offset(), ACC, str);
         }
     }
 
@@ -1034,13 +1034,13 @@ void CgenClassTable::generate_class_methods() {
     List<CgenNode> *curr = nds;
     while (curr != NULL) {
         if (!curr->hd()->basic()) {
-            curr->hd()->generate_class_methods(str);
+            curr->hd()->generate_class_methods(this, str);
         }
         curr = curr->tl();
     }
 }
 
-void CgenNode::generate_class_methods(ostream &str) {
+void CgenNode::generate_class_methods(CgenClassTable *table, ostream &str) {
     for (const auto &method : get_methods()) {
         emit_method_ref(get_name(), method->get_name(), str);
         str << LABEL;
@@ -1058,7 +1058,7 @@ void CgenNode::generate_class_methods(ostream &str) {
 
         // Generate code for the expression. The value of the expression should be 
         // stored in $a0.
-        method->get_expression()->code(scope, str);
+        method->get_expression()->code(table, scope, str);
         scope.exitscope();
 
         // Restore callee-saved registers.
@@ -1180,6 +1180,24 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
    stringtable.add_string(name->get_string());          // Add class name to string table
 }
 
+CgenNode *CgenClassTable::find_class(Symbol class_name) {
+    List<CgenNode> *curr = nds;
+    while (curr != NULL) {
+        CgenNode *nd = curr->hd();
+        if (nd->name == class_name) {
+            return nd;
+        }
+        curr = curr->tl();
+    }
+    return NULL;
+}
+
+int CgenClassTable::get_method_index(Symbol static_type, Symbol method_name) {
+    CgenNode *cls = find_class(static_type);
+    assert(cls != NULL);
+    return cls->get_method_idx(method_name);
+}
+
 
 //******************************************************************
 //
@@ -1191,44 +1209,71 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
 //
 //*****************************************************************
 
-void assign_class::code(VariableScope &scope, ostream &s) {
+void assign_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void static_dispatch_class::code(VariableScope &scope, ostream &s) {
+void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void dispatch_class::code(VariableScope &scope, ostream &s) {
+
+
+void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // First evaluate the expression. The result should now be in $a0.
+    expr->code(helper, scope, s);
+    int n = actual->len();
+    if (n > 0) {
+        // Allocate space on the stack for the additional arguments.
+        emit_addiu(SP, SP, -4*n, s);
+        // Store the value on the stack while we execute the passed arguments.
+        emit_push(ACC, s);
+        for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
+            Expression expr = actual->nth(i);
+            expr->code(helper, scope, s);
+            // Store the result in $a0 at the corresponding offset in the stack.
+            // Skip over the empty value and the $a0 value stored at the top of the stack.
+            emit_store(ACC, i + 2, SP, s);
+        }
+        // Pop the target expression $a0 value from the top of the stack.
+        emit_pop(ACC, s);
+    }
+    // Get the dispatch table for the target object.
+    emit_load(T1, 2, ACC, s);
+    // Get the offset from the dispatch table
+    int method_idx = helper->get_method_index(expr->get_type(), name);
+    emit_load(T1, method_idx, T1, s);
+    // Call the method. The callee handles cleaning up the stack.
+    emit_jalr(T1, s);
 }
 
-void cond_class::code(VariableScope &scope, ostream &s) {
+void cond_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void loop_class::code(VariableScope &scope, ostream &s) {
+void loop_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void typcase_class::code(VariableScope &scope, ostream &s) {
+void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void block_class::code(VariableScope &scope, ostream &s) {
+void block_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
     for (int i = body->first(); body->more(i); i = body->next(i)) {
-        body->nth(i)->code(scope, s);
+        body->nth(i)->code(helper, scope, s);
     }
     // $a0 will contain the result of evaluating the last
     // expression in the body.
 }
 
-void let_class::code(VariableScope &scope, ostream &s) {
+void let_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, VariableScope scope, ostream &s) {
+static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, ExpressionHelper *helper, VariableScope scope, ostream &s) {
     // Execute the first expression; its result is in $a0.
-    op->e1->code(scope, s);                
+    op->e1->code(helper, scope, s);                
     // Load the actual integer value into a register. The actual value is the first attribute.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Store the value on the stack.
     emit_push(ACC, s);
     // Execute the second expression; its result is in $a0.
-    op->e2->code(scope, s);
+    op->e2->code(helper, scope, s);
     // Load the actual integer value.
     emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     // Restore the result of the first expression to $t1.
@@ -1247,38 +1292,38 @@ static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Bin
     emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
-void plus_class::code(VariableScope &scope, ostream &s) {
-    emit_arith(emit_addu, this, scope, s);
+void plus_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    emit_arith(emit_addu, this, helper, scope, s);
 }
 
-void sub_class::code(VariableScope &scope, ostream &s) {
-    emit_arith(emit_sub, this, scope, s);
+void sub_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    emit_arith(emit_sub, this, helper, scope, s);
 }
 
-void mul_class::code(VariableScope &scope, ostream &s) {
-    emit_arith(emit_mul, this, scope, s);
+void mul_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    emit_arith(emit_mul, this, helper, scope, s);
 }
 
-void divide_class::code(VariableScope &scope, ostream &s) {
-    emit_arith(emit_div, this, scope, s);
+void divide_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    emit_arith(emit_div, this, helper, scope, s);
 }
 
-void neg_class::code(VariableScope &scope, ostream &s) {
+void neg_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void lt_class::code(VariableScope &scope, ostream &s) {
+void lt_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void eq_class::code(VariableScope &scope, ostream &s) {
+void eq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void leq_class::code(VariableScope &scope, ostream &s) {
+void leq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void comp_class::code(VariableScope &scope, ostream &s) {
+void comp_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void int_const_class::code(VariableScope &scope, ostream& s)  
+void int_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostream& s)  
 {
   //
   // Need to be sure we have an IntEntry *, not an arbitrary Symbol
@@ -1286,23 +1331,29 @@ void int_const_class::code(VariableScope &scope, ostream& s)
   emit_load_int(ACC,inttable.lookup_string(token->get_string()),s);
 }
 
-void string_const_class::code(VariableScope &scope, ostream& s)
+void string_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostream& s)
 {
   emit_load_string(ACC,stringtable.lookup_string(token->get_string()),s);
 }
 
-void bool_const_class::code(VariableScope &scope, ostream& s)
+void bool_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostream& s)
 {
   emit_load_bool(ACC, BoolConst(val), s);
 }
 
-void new__class::code(VariableScope &scope, ostream &s) {
+void new__class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // Store the address of the prototype object in $a0.
+    emit_load_address(ACC, get_proto_label(type_name)->c_str(), s);
+    // Get a fresh copy of an integer object in $a0.
+    emit_jal(get_method_label(Object, ::copy)->c_str(), s);
+    // Call the initializer method on the object
+    emit_jal(get_init_label(type_name)->c_str(), s);
 }
 
-void isvoid_class::code(VariableScope &scope, ostream &s) {
+void isvoid_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
-void no_expr_class::code(VariableScope &scope, ostream &s) {
+void no_expr_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
 static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
@@ -1315,7 +1366,7 @@ static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
             // Load 'self' into $a0, located just below the frame pointer.
             emit_load(dst, -1 , FP, s);
             // Load the value itself.
-            emit_load(dst, var_info->get_offset(), dst, s);
+            emit_load(dst, DEFAULT_OBJFIELDS + var_info->get_offset(), dst, s);
             return;
         default:
             // Unreachable.
@@ -1323,7 +1374,7 @@ static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
     }
 }
 
-void object_class::code(VariableScope &scope, ostream &s) {
+void object_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
     VariableInfo *var_info = scope.lookup(name);
     assert(var_info != NULL);
     emit_load_variable(ACC, var_info, s);
