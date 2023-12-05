@@ -20,13 +20,15 @@ class Main {
         "It's main!"
     };
     main(): Int {{
-        (new IO).out_string(self.utterNoise());
+        (new IO).out_string(self@Main.utterNoise());
         (new IO).out_string("\n");
         (new IO).out_string(utterNoise());
         (new IO).out_string("\n");
         (new IO).out_int(b.meth2(b.meth2(2, 2), b.meth2(5, 400)));
         (new IO).out_string("\n");
         (new IO).out_string(b.makeSound());
+        (new IO).out_string("\n");
+        (new IO).out_string(b@A.makeSound());
         (new IO).out_string("\n");
         (new IO).out_string(a.makeSound());
         (new IO).out_string("\n");

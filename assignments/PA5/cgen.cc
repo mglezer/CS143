@@ -1243,6 +1243,31 @@ void assign_class::code(ExpressionHelper *helper, VariableScope &scope, ostream 
 }
 
 void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    int n = actual->len();
+    if (n > 0) {
+        // Allocate space on the stack for the additional arguments.
+        emit_addiu(SP, SP, -4*n, s);
+        for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
+            Expression expr = actual->nth(i);
+            expr->code(helper, scope, s);
+            // Store the result in $a0 at the corresponding offset in the stack.
+            // Skip over the empty value.
+            emit_store(ACC, 1 + i, SP, s);
+        }
+    }
+    if (expr->is_empty()) {
+        emit_load_self(ACC, s);
+    } else {
+        // Now evaluate the expression. The result should now be in $a0.
+        expr->code(helper, scope, s);
+    }
+    // Get the dispatch table for the target object.
+    emit_load_address(T1, get_dispatch_label(type_name)->c_str(), s);
+    // Get the offset from the dispatch table
+    int method_idx = helper->get_method_index(scope, type_name, name);
+    emit_load(T1, method_idx, T1, s);
+    // Call the method. The callee handles cleaning up the stack.
+    emit_jalr(T1, s);
 }
 
 
@@ -1384,6 +1409,7 @@ void isvoid_class::code(ExpressionHelper *helper, VariableScope &scope, ostream 
 }
 
 void no_expr_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // Nothing to do.
 }
 
 void object_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
