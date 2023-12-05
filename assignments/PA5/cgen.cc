@@ -1218,24 +1218,20 @@ void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope,
 
 
 void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
-    // First evaluate the expression. The result should now be in $a0.
-    expr->code(helper, scope, s);
     int n = actual->len();
     if (n > 0) {
         // Allocate space on the stack for the additional arguments.
         emit_addiu(SP, SP, -4*n, s);
-        // Store the value on the stack while we execute the passed arguments.
-        emit_push(ACC, s);
         for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
             Expression expr = actual->nth(i);
             expr->code(helper, scope, s);
             // Store the result in $a0 at the corresponding offset in the stack.
-            // Skip over the empty value and the $a0 value stored at the top of the stack.
-            emit_store(ACC, i + 2, SP, s);
+            // Skip over the empty value.
+            emit_store(ACC, 1 + i, SP, s);
         }
-        // Pop the target expression $a0 value from the top of the stack.
-        emit_pop(ACC, s);
     }
+    // Now evaluate the expression. The result should now be in $a0.
+    expr->code(helper, scope, s);
     // Get the dispatch table for the target object.
     emit_load(T1, 2, ACC, s);
     // Get the offset from the dispatch table
