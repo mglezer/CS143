@@ -20,6 +20,10 @@ class Main {
         "It's main!"
     };
     main(): Int {{
+        let tmp1: Int <- 5, tmp2: String <- "Hi" in {
+            (new IO).out_int(tmp1 + 1);
+            (new IO).out_string(tmp2.concat("\n"));
+        };
         (new IO).out_string(self@Main.utterNoise());
         (new IO).out_string("\n");
         (new IO).out_string(utterNoise());

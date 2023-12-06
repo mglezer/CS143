@@ -29,6 +29,8 @@
 extern void emit_string_constant(ostream& str, char *s);
 extern int cgen_debug;
 
+static int stack_offset = 0;
+
 //
 // Three symbols from the semantic analyzer (semant.cc) are used.
 // If e : No_type, then no code is generated for e.
@@ -117,36 +119,39 @@ static char *gc_collect_names[] =
 BoolConst falsebool(FALSE);
 BoolConst truebool(TRUE);
 
-std::string *get_dispatch_label(Symbol class_name) {
+static std::string *get_dispatch_label(Symbol class_name) {
     return new std::string(std::string(class_name->get_string()) + DISPTAB_SUFFIX);
 }
 
-std::string *get_proto_label(Symbol class_name) {
+static std::string *get_proto_label(Symbol class_name) {
     return new std::string(std::string(class_name->get_string()) + PROTOBJ_SUFFIX);
 }
 
-std::string *get_init_label(Symbol class_name) {
+static std::string *get_init_label(Symbol class_name) {
     return new std::string(std::string(class_name->get_string()) + CLASSINIT_SUFFIX);
 }
 
-std::string *get_method_label(Symbol class_name, Symbol method_name) {
+static std::string *get_method_label(Symbol class_name, Symbol method_name) {
     return new std::string(std::string(class_name->get_string()) + METHOD_SEP + method_name->get_string());
 }
 
-void write_default_value_for_attr(CgenNode *cls, ostream &s) {
-    s << WORD;
-    if (cls->get_name() == Str) {
+static void emit_default_code_ref_for_type(Symbol type, ostream &s) {
+    if (type == Str) {
         static_cast<StringEntry *>(stringtable.lookup_string(""))->code_ref(s);
-    } else if (cls->get_name() == Bool) {
+    } else if (type == Bool) {
         falsebool.code_ref(s); 
-    } else if (cls->get_name() == Int) {
+    } else if (type == Int) {
         static_cast<IntEntry *>(inttable.lookup_string("0"))->code_ref(s);
     } else {
         s << 0;
     }
-    s << endl;
 }
 
+static void write_default_value_for_attr(CgenNode *cls, ostream &s) {
+    s << WORD;
+    emit_default_code_ref_for_type(cls->get_name(), s);
+    s << endl;
+}
 
 //*********************************************************
 //
@@ -372,6 +377,7 @@ static void emit_branch(int l, ostream& s)
 //
 static void emit_push(char *reg, ostream& str)
 {
+  stack_offset--;
   emit_store(reg,0,SP,str);
   emit_addiu(SP,SP,-4,str);
 }
@@ -381,6 +387,7 @@ static void emit_push(char *reg, ostream& str)
 //
 static void emit_pop(char *reg, ostream& str)
 {
+  stack_offset++;
   emit_addiu(SP,SP,4,str);
   emit_load(reg,0,SP,str);
 }
@@ -390,6 +397,7 @@ static void emit_pop(char *reg, ostream& str)
 //
 static void emit_pop(ostream& str)
 {
+  stack_offset++;
   emit_addiu(SP,SP,4,str);
 }
 
@@ -397,6 +405,7 @@ static void emit_pop(ostream& str)
 // Stores callee-saved registers on the stack.
 //
 static void setup_activation_record_for_callee(ostream &str) {
+    stack_offset = -1;
     emit_push(ACC, str);
     emit_push(FP, str);
     emit_push(RA, str);
@@ -1067,9 +1076,6 @@ void CgenNode::generate_class_methods(CgenClassTable *table, ostream &str) {
         emit_method_ref(get_name(), method->get_name(), str);
         str << LABEL;
 
-        // Save the callee-saved registers on the stack.
-        setup_activation_record_for_callee(str);
-
         // Add the method parameters to the scope.
         VariableScope scope = get_variable_scope();
         scope.enterscope();
@@ -1080,6 +1086,9 @@ void CgenNode::generate_class_methods(CgenClassTable *table, ostream &str) {
         // Bound self to the class, treating it as another parameter.
         // The offset is -1 wrt the frame pointer.
         scope.addid(self, new VariableInfo(-1, name, ScopeType::PARAM));
+
+        // Save the callee-saved registers on the stack.
+        setup_activation_record_for_callee(str);
 
         // Generate code for the expression. The value of the expression should be 
         // stored in $a0.
@@ -1318,6 +1327,26 @@ void block_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &
 }
 
 void let_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // store the temporary variable on the stack a known offset from the frame pointer.
+    // Record the offset BEFORE pushing.
+    scope.enterscope();
+    // Add the temporary variable to the scope.
+    scope.addid(identifier, new VariableInfo(stack_offset, type_decl, ScopeType::PARAM));
+    if (init->is_empty()) {
+        emit_partial_load_address(T1, s);
+        emit_default_code_ref_for_type(type_decl, s);
+        s << endl;
+        emit_push(T1, s);
+    } else {
+        init->code(helper, scope, s);
+        // The result should be in $a0.
+        emit_push(ACC, s);
+    }
+    // Execute the body. The result should be in $a0.
+    body->code(helper, scope, s);
+    scope.exitscope();
+    // Pop the value off of the stack; it's no longer in scope.
+    emit_pop(s);
 }
 
 static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Binary_operation *op, ExpressionHelper *helper, VariableScope scope, ostream &s) {
