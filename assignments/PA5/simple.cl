@@ -16,10 +16,14 @@ class Main {
     num: Int <- 7 * 3;
     b: B <- new B;
     a: A <- new A;
+    boo: Bool <- true;
     utterNoise(): String {
         "It's main!"
     };
     main(): Int {{
+        while boo loop
+            boo <- false
+        pool;
         let tmp1: Int <- 5, tmp2: String <- "Hi" in {
             (new IO).out_int(tmp1 + 1);
             (new IO).out_string(tmp2.concat("\n"));

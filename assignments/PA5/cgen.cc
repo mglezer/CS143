@@ -31,6 +31,12 @@ extern int cgen_debug;
 
 static int stack_offset = 0;
 
+static int label_no = 0;
+
+static int get_unique_label() {
+    return label_no++;
+}
+
 //
 // Three symbols from the semantic analyzer (semant.cc) are used.
 // If e : No_type, then no code is generated for e.
@@ -200,24 +206,6 @@ static void emit_load(char *dest_reg, int offset, char *source_reg, ostream& s)
 
 static void emit_load_self(char *dst, ostream &s) {
     emit_load(dst, -1, FP, s);
-}
-
-static void emit_load_variable(char *dst, VariableInfo *var_info, ostream &s) {
-    switch (var_info->get_scope_type()) {
-        case PARAM:
-            // Directly load the value itself from the frame pointer.
-            emit_load(dst, var_info->get_offset(), FP, s);
-            return;
-        case ATTRIBUTE:
-            // Load 'self' into $a0, located just below the frame pointer.
-            emit_load_self(ACC, s);
-            // Load the value itself.
-            emit_load(dst, DEFAULT_OBJFIELDS + var_info->get_offset(), dst, s);
-            return;
-        default:
-            // Unreachable.
-            assert(false);
-    }
 }
 
 static void emit_store(char *source_reg, int offset, char *dest_reg, ostream& s)
@@ -400,6 +388,44 @@ static void emit_pop(ostream& str)
   stack_offset++;
   emit_addiu(SP,SP,4,str);
 }
+
+static void emit_load_variable_address(char *dst, VariableInfo *var_info, ostream &s) {
+    switch (var_info->get_scope_type()) {
+        case PARAM:
+            // Directly load the address of the variable.
+            emit_addiu(dst, FP, WORD_SIZE * var_info->get_offset(), s);
+            return;
+        case ATTRIBUTE:
+            // Load 'self' into $a0, located just below the frame pointer.
+            emit_load_self(dst, s);
+            // Load the address, which is some offset from self.
+            emit_addiu(dst, dst, WORD_SIZE * (DEFAULT_OBJFIELDS + var_info->get_offset()), s);
+            return;
+        default:
+            // Unreachable.
+            assert(false);
+    }
+}
+
+// The address of the variable is stored in the $dst register.
+static void emit_load_variable_value(char *dst, VariableInfo *var_info, ostream &s) {
+    switch (var_info->get_scope_type()) {
+        case PARAM:
+            // Directly load the value itself from the frame pointer.
+            emit_load(dst, var_info->get_offset(), FP, s);
+            return;
+        case ATTRIBUTE:
+            // Load 'self' into $a0, located just below the frame pointer.
+            emit_load_self(dst, s);
+            // Load the value itself.
+            emit_load(dst, DEFAULT_OBJFIELDS + var_info->get_offset(), dst, s);
+            return;
+        default:
+            // Unreachable.
+            assert(false);
+    }
+}
+
 
 //
 // Stores callee-saved registers on the stack.
@@ -1249,6 +1275,14 @@ int CgenClassTable::get_method_index(VariableScope &scope, Symbol static_type, S
 //*****************************************************************
 
 void assign_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // First evaluate the expression. The result is in $a0.
+    expr->code(helper, scope, s);
+    VariableInfo *var_info = scope.lookup(name);
+    assert(var_info != NULL);
+    // Load the address of the variable in $t1.
+    emit_load_variable_address(T1, var_info, s);
+    // Store the new value at the variable address.
+    emit_store(ACC, 0, T1, s);
 }
 
 void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
@@ -1313,6 +1347,23 @@ void cond_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s
 }
 
 void loop_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    int label_pred = get_unique_label();
+    int label_after = get_unique_label();
+    emit_label_def(label_pred, s);
+    // Evaluate the predicate. The result is in $a0.
+    pred->code(helper, scope, s);
+    // Load the raw integer value of the Bool.
+    emit_fetch_int(ACC, ACC, s);
+    emit_load_imm(T1, TRUE, s);
+    // Break if the predicate is not true.
+    emit_bne(ACC, T1, label_after, s);
+    // If the predicate is true continue executing the body.
+    body->code(helper, scope, s); 
+    // Jump to the predicate.
+    emit_jal((std::string("label") + std::to_string(label_pred)).c_str(), s);
+    emit_label_def(label_after, s);
+    // void must be returned upon termination.
+    emit_load_imm(ACC, 0, s);
 }
 
 void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
@@ -1444,7 +1495,7 @@ void no_expr_class::code(ExpressionHelper *helper, VariableScope &scope, ostream
 void object_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
     VariableInfo *var_info = scope.lookup(name);
     assert(var_info != NULL);
-    emit_load_variable(ACC, var_info, s);
+    emit_load_variable_value(ACC, var_info, s);
 }
 
 
