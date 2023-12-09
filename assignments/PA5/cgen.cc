@@ -434,6 +434,16 @@ static void emit_load_variable_value(char *dst, VariableInfo *var_info, ostream 
     }
 }
 
+static void emit_print_error_msg_and_exit(char *msg, ostream &s) {
+    emit_load_string(ACC, stringtable.lookup_string(msg), s);
+    emit_addiu(ACC, ACC, (DEFAULT_OBJFIELDS + 1) * WORD_SIZE, s);
+    // Print the error message to the screen.
+    emit_load_imm("$v0", 4, s);
+    s << "\tsyscall" << endl;
+    // Exit the program early.
+    emit_load_imm("$v0", 10, s);
+    s << "\tsyscall" << endl;
+}
 
 //
 // Stores callee-saved registers on the stack.
@@ -731,6 +741,7 @@ void CgenClassTable::code_select_gc()
 //
 
 static char *CASE_ERROR = "Error: no matching case in switch!\n";
+static char *VOID_DISPATCH_ERROR = "Error: dispatch on void!\n";
 
 void CgenClassTable::code_constants()
 {
@@ -739,6 +750,7 @@ void CgenClassTable::code_constants()
   //
   stringtable.add_string("");
   stringtable.add_string(CASE_ERROR);
+  stringtable.add_string(VOID_DISPATCH_ERROR);
   inttable.add_string("0");
 
   stringtable.code_string_table(str,stringclasstag);
@@ -1370,6 +1382,11 @@ void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostrea
     } else {
         // Now evaluate the expression. The result should now be in $a0.
         expr->code(helper, scope, s);
+        // Check if $a0 is NULL. If it is we must throw a runtime error.
+        int valid_dispatch_label = get_unique_label();
+        emit_bne(ACC, ZERO, valid_dispatch_label, s);
+        emit_print_error_msg_and_exit(VOID_DISPATCH_ERROR, s);
+        emit_label_def(valid_dispatch_label, s);
     }
     // Get the dispatch table for the target object.
     emit_load(T1, 2, ACC, s);
@@ -1453,18 +1470,6 @@ int CgenClassTable::get_class_tag(Symbol class_name) {
     return probe(class_name)->get_tag_number();
 };
 
-static void emit_print_error_msg(char *msg, ostream &s) {
-    emit_load_string(ACC, stringtable.lookup_string(msg), s);
-    emit_addiu(ACC, ACC, (DEFAULT_OBJFIELDS + 1) * WORD_SIZE, s);
-    emit_load_imm("$v0", 4, s);
-    s << "\tsyscall" << endl;
-}
-
-static void emit_early_exit(ostream &s) {
-    emit_load_imm("$v0", 10, s);
-    s << "\tsyscall" << endl;
-}
-
 void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
     // Sort the cases by their class tags in descending order.
     // This way, the first case that matches is guaranteed to be "minimal",
@@ -1505,9 +1510,7 @@ void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream
     }
     // Final label, only used if no cases match.
     emit_label_def(labels[labels.size() - 1], s);
-    emit_print_error_msg(CASE_ERROR, s);
-    // Exit the program.
-    emit_early_exit(s);
+    emit_print_error_msg_and_exit(CASE_ERROR, s);
 
     // We will jump here upon successful completion.
     emit_label_def(success_label, s);

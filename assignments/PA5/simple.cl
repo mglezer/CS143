@@ -17,12 +17,14 @@ class Main {
     num: Int <- 7 * 3;
     b: B <- new B;
     a: A <- new A;
+    uninit: B;
     io: IO <- new IO;
     boo: Bool <- true;
     utterNoise(): String {
         "It's main!"
     };
     main(): Int {{
+        b.get_num();
         num <- case b of
             m: Main => 8;
             bb: B => bb.get_num();
