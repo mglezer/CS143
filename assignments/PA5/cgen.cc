@@ -1313,6 +1313,13 @@ void assign_class::code(ExpressionHelper *helper, VariableScope &scope, ostream 
     emit_load_variable_address(T1, var_info, s);
     // Store the new value at the variable address.
     emit_store(ACC, 0, T1, s);
+    if (var_info->get_scope_type() == ATTRIBUTE) {
+        if (cgen_Memmgr == GC_GENGC) {
+            // Notify the garbage collector of the address of the attribute.
+            emit_move(A1, T1, s);
+            emit_jal("_GenGC_Assign", s);
+        }
+    }
 }
 
 void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
