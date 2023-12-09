@@ -50,6 +50,9 @@ class VariableScope : public SymbolTable<Symbol, VariableInfo> {};
 class ExpressionHelper {
     public:
         virtual int get_method_index(VariableScope &scope, Symbol static_type, Symbol method_name) = 0;
+
+    public:
+        virtual int get_class_tag(Symbol class_name) = 0;
 };
 
 
@@ -142,6 +145,9 @@ class Case_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Case(); }
    virtual Case copy_Case() = 0;
+   virtual Symbol get_type_decl() = 0;
+   virtual Symbol get_name() = 0;
+   virtual Expression get_expression() = 0;
 
 #ifdef Case_EXTRAS
    Case_EXTRAS
@@ -352,6 +358,9 @@ public:
    }
    Case copy_Case();
    void dump(ostream& stream, int n);
+   Symbol get_type_decl() override { return type_decl; }
+   Symbol get_name() override { return name; }
+   Expression get_expression() override { return expr; }
 
 #ifdef Case_SHARED_EXTRAS
    Case_SHARED_EXTRAS

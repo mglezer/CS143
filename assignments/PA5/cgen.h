@@ -15,44 +15,6 @@ typedef CgenClassTable *CgenClassTableP;
 class CgenNode;
 typedef CgenNode *CgenNodeP;
 
-class ClassTagTable {
-    private:
-        // Unfortunately std::map does not keep track of insertion order,
-        // and we need a data structure that allows lookup by tag number as well as
-        // printing out all entries ordered by tag number. A simple vector works OK
-        // at the expense of O(N) lookup.
-        std::vector<StringEntry *> class_names;
-
-    public:
-        static const int OBJECT = 0;
-        static const int IO_ = 1;
-        static const int INT = 2;
-        static const int BOOL = 3;
-        static const int STRING = 4;
-
-        void init();
-
-        int assign_tag(StringEntry *class_name) {
-            // Assign then increment.
-            class_names.push_back(class_name);
-            return class_names.size() - 1;
-        }
-
-        int get_tag(StringEntry *class_name) {
-            for (int i = 0; i < class_names.size(); i++) {
-                if (class_names[i] == class_name) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-
-        std::vector<StringEntry *> *get_class_names() {
-            return &class_names;
-        }
-};
-
 class MethodIdxTable : public SymbolTable<Symbol, int> {};
 class MethodImplTable : public SymbolTable<Symbol, std::string> {};
 class CgenClassTable : public SymbolTable<Symbol,CgenNode>, public ExpressionHelper {
@@ -66,7 +28,7 @@ private:
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
    VariableScope variable_scope;
-   ClassTagTable class_tag_table;
+   std::vector<CgenNode *> class_tag_table;
 
 
 // The following methods emit code for
@@ -100,11 +62,16 @@ private:
    void generate_class_methods();
    CgenNode *find_class(Symbol class_name);
 
+   void assign_next_class_tag(CgenNode *curr);
+   void assign_nonbasic_class_tags(CgenNode *curr);
+   void assign_basic_class_tags();
+
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();
    int get_method_index(VariableScope &scope, Symbol static_type, Symbol method_name);
+   int get_class_tag(Symbol class_name);
 };
 
 
@@ -116,6 +83,7 @@ private:
                                               // `NotBasic' otherwise
    int next_method_index = 0;
    int next_attr_offset = 0;
+   int tag_number;
 
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
@@ -135,6 +103,13 @@ public:
    int get_and_increment_method_index() { return next_method_index++; }
    int get_and_increment_attr_offset() { return next_attr_offset++; }
    void generate_dispatch_table(ostream &s);
+   void set_tag_number(int n) {
+       tag_number = n;
+   }
+   int get_tag_number() {
+       return tag_number;
+   }
+
    VariableScope get_variable_scope() {
        return variable_scope;
    }

@@ -36,6 +36,7 @@
 #define STRCONST_PREFIX      "str_const"
 #define BOOLCONST_PREFIX     "bool_const"
 
+#define CLASS_HIERARCHY      "class_hierarchy"
 
 #define EMPTYSLOT            0
 #define LABEL                ":\n"
@@ -82,6 +83,7 @@
 #define JALR  "\tjalr\t"  
 #define JAL   "\tjal\t"                 
 #define RET   "\tjr\t"RA"\t"
+#define J     "\tj\t"
 
 #define SW    "\tsw\t"
 #define LW    "\tlw\t"

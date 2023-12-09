@@ -277,6 +277,14 @@ static void emit_jalr(const char *dest, ostream& s)
 static void emit_jal(const char *address,ostream &s)
 { s << JAL << address << endl; }
 
+static void emit_j(const char *address, ostream &s) {
+    s << J << address << endl;
+}
+
+static void emit_jump_to_label(int label, ostream &s) {
+    emit_j((std::string("label") + std::to_string(label)).c_str(), s);
+}
+
 static void emit_return(ostream& s)
 { s << RET << endl; }
 
@@ -720,6 +728,9 @@ void CgenClassTable::code_select_gc()
 // and producing code for each entry.
 //
 //********************************************************
+//
+
+static char *CASE_ERROR = "Error: no matching case in switch!\n";
 
 void CgenClassTable::code_constants()
 {
@@ -727,6 +738,7 @@ void CgenClassTable::code_constants()
   // Add constants that are required by the code generator.
   //
   stringtable.add_string("");
+  stringtable.add_string(CASE_ERROR);
   inttable.add_string("0");
 
   stringtable.code_string_table(str,stringclasstag);
@@ -734,26 +746,16 @@ void CgenClassTable::code_constants()
   code_bools(boolclasstag);
 }
 
-void ClassTagTable::init() {
-    assign_tag(stringtable.lookup_string(Object->get_string()));
-    assign_tag(stringtable.lookup_string(IO->get_string()));
-    assign_tag(stringtable.lookup_string(Int->get_string()));
-    assign_tag(stringtable.lookup_string(Bool->get_string()));
-    assign_tag(stringtable.lookup_string(Str->get_string()));
-}
-
-
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = ClassTagTable::STRING;
-   intclasstag =    ClassTagTable::INT;
-   boolclasstag =   ClassTagTable::BOOL;
+   stringclasstag = 4;
+   intclasstag =    2;
+   boolclasstag =   3;
 
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
    install_basic_classes();
    install_classes(classes);
-   class_tag_table.init();
    build_inheritance_tree();
    determine_offsets();
 
@@ -940,35 +942,61 @@ void CgenClassTable::determine_offsets()
 }
 
 void CgenClassTable::generate_class_name_table() {
-    assign_class_tags();
+    assign_basic_class_tags();
+    assign_nonbasic_class_tags(root());
+
+    // Create the name table
     str << CLASSNAMETAB << LABEL;
-    std::vector<StringEntry *> *class_names = class_tag_table.get_class_names();
-    for (int i = 0; i < class_names->size(); i++) {
+    for (int i = 0; i < class_tag_table.size(); i++) {
         str << WORD;
-        (*class_names)[i]->code_ref(str);
+        StringEntry *entry = static_cast<StringEntry *>(stringtable.lookup_string(class_tag_table[i]->get_name()->get_string()));
+        entry->code_ref(str);
         str << endl;
+    }
+
+    // Create the hierarchy table, where table[i] = tag(parent(class with i))
+    str << CLASS_HIERARCHY << LABEL;
+    // Object does not have a parent.
+    str << WORD << -1 << endl;
+    for (int i = 1; i < class_tag_table.size(); i++) {
+        // Get the tag number of the parent
+        str << WORD << class_tag_table[i]->get_parentnd()->get_tag_number() << endl;
     }
 }
 
-void CgenClassTable::assign_class_tags() {
-    List<CgenNode> *curr = nds;
-    while (curr != NULL) {
-        CgenNode *nd = curr->hd();
-        if (!nd->basic()) {
-            StringEntry *entry = static_cast<StringEntry *>(stringtable.lookup_string(nd->get_name()->get_string()));
-            class_tag_table.assign_tag(entry);
-        }
-        curr = curr->tl();
+void CgenClassTable::assign_basic_class_tags() {
+    assign_next_class_tag(probe(Object)); // 0
+    assign_next_class_tag(probe(::IO));    // 1
+    assign_next_class_tag(probe(Int));    // 2
+    assign_next_class_tag(probe(Bool));   // 3
+    assign_next_class_tag(probe(Str));    // 4
+}
+    
+
+void CgenClassTable::assign_next_class_tag(CgenNode *curr) {
+    class_tag_table.push_back(curr);
+    curr->set_tag_number(class_tag_table.size() - 1);
+}
+
+void CgenClassTable::assign_nonbasic_class_tags(CgenNode *curr) {
+    // Class tags at least have the following property:
+    // If A <= B, then idx(A) >= idx(B), or if idx(A) < idx(B), then A is not a B.
+    if (!curr->basic()) {
+        assign_next_class_tag(curr);
     }
+    List<CgenNode> *child = curr->get_children();
+    while (child != NULL) {
+        assign_nonbasic_class_tags(child->hd());
+        child = child->tl();
+     }
 }
 
 void CgenClassTable::generate_class_object_table() {
     str << CLASSOBJTAB << LABEL;
     List<CgenNode> *curr = nds;
-    std::vector<StringEntry *> *class_names = class_tag_table.get_class_names();
-    for (int i = 0; i < class_names->size(); i++) {
-        str << WORD << (*class_names)[i] << DISPTAB_SUFFIX << endl;
-        str << WORD << (*class_names)[i] << CLASSINIT_SUFFIX << endl;
+    for (int i = 0; i < class_tag_table.size(); i++) {
+        str << WORD << class_tag_table[i]->get_name() << DISPTAB_SUFFIX << endl;
+        str << WORD << class_tag_table[i]->get_name() << CLASSINIT_SUFFIX << endl;
     }
 }
 
@@ -1013,7 +1041,8 @@ void CgenClassTable::generate_proto_objects() {
     while (curr != NULL) {
         CgenNode *curr_class = curr->hd();
 
-        int tag = class_tag_table.get_tag(static_cast<StringEntry *>(stringtable.lookup_string(curr_class->get_name()->get_string())));
+        int tag = curr_class->get_tag_number();
+        assert(tag > -1);
 
         str << WORD << GC_TAG << endl;
 
@@ -1258,6 +1287,7 @@ int CgenClassTable::get_method_index(VariableScope &scope, Symbol static_type, S
         VariableInfo *var_info = scope.lookup(self);
         static_type = var_info->get_type();
     }
+    // TODO: simply replace with probe
     CgenNode *cls = find_class(static_type);
     assert(cls != NULL);
     return cls->get_method_idx(method_name);
@@ -1360,13 +1390,124 @@ void loop_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s
     // If the predicate is true continue executing the body.
     body->code(helper, scope, s); 
     // Jump to the predicate.
-    emit_jal((std::string("label") + std::to_string(label_pred)).c_str(), s);
+    emit_j((std::string("label") + std::to_string(label_pred)).c_str(), s);
     emit_label_def(label_after, s);
     // void must be returned upon termination.
     emit_load_imm(ACC, 0, s);
 }
 
+// Stores in the destination register whether type A is a subtype of type B.
+static void emit_is_subtype(char *dst, int tag_a, int tag_b, ostream &s) {
+    int label_true = get_unique_label();
+    int label_false = get_unique_label();
+    int label_end = get_unique_label();
+    int label_loop = get_unique_label();
+
+    emit_load_imm(T1, tag_a, s);
+    emit_load_imm(T2, tag_b, s);
+
+    // Loop
+    emit_label_def(label_loop, s);
+    emit_load_imm(T3, -1, s);
+    // If we have reached the parent of the Object class return false.
+    emit_beq(T1, T3, label_false, s);
+    // If the tags are equal return true.
+    emit_beq(T1, T2, label_true, s);
+    // Replace T2 with its parent
+    emit_load_address(T3, CLASS_HIERARCHY, s);
+    // Get the address of the parent tag is located
+    // Store T3 on the stack.
+    emit_push(T3, s); 
+    emit_load_imm(T3, WORD_SIZE, s);
+    emit_mul(T1, T1, T3, s);
+    // Restore T3 as the class hierarchy address.
+    emit_pop(T3, s);
+    // Compute the address of T2's parent tag.
+    emit_addu(T3, T3, T1, s);
+    // Load the parent tag into T2.
+    emit_load(T1, 0, T3, s);
+    // Repeat.
+    emit_jump_to_label(label_loop, s);
+
+    // Jump here in the false case.
+    emit_label_def(label_false, s);
+    emit_load_imm(dst, 0, s);
+    emit_jump_to_label(label_end, s);
+
+    // Jump here in the true case.
+    emit_label_def(label_true, s);
+    emit_load_imm(dst, 1, s);
+
+    // End here.
+    emit_label_def(label_end, s);
+}
+
+int CgenClassTable::get_class_tag(Symbol class_name) {
+    return probe(class_name)->get_tag_number();
+};
+
+static void emit_print_error_msg(char *msg, ostream &s) {
+    emit_load_string(ACC, stringtable.lookup_string(msg), s);
+    emit_addiu(ACC, ACC, (DEFAULT_OBJFIELDS + 1) * WORD_SIZE, s);
+    emit_load_imm("$v0", 4, s);
+    s << "\tsyscall" << endl;
+}
+
+static void emit_early_exit(ostream &s) {
+    emit_load_imm("$v0", 10, s);
+    s << "\tsyscall" << endl;
+}
+
 void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // Sort the cases by their class tags in descending order.
+    // This way, the first case that matches is guaranteed to be "minimal",
+    // i.e. the most specific match.
+    std::list<Case> cases;
+    for (int i = this->cases->first(); this->cases->more(i); i = this->cases->next(i)) {
+        cases.push_back(this->cases->nth(i));
+    }
+    cases.sort([helper](const Case a, const Case b) {
+            return helper->get_class_tag(a->get_type_decl()) > helper->get_class_tag(b->get_type_decl());
+            });
+
+    std::vector<int> labels;
+    for (int i = 0; i < cases.size() + 1; i++) {
+        int unique_label = get_unique_label();
+        labels.push_back(unique_label);
+    }
+    int success_label = get_unique_label();
+    // Execute the expression and store its value on the stack.
+    expr->code(helper, scope, s);
+    // The result should be in $a0.
+    emit_push(ACC, s);
+
+    int i = 0;
+    for (const auto &cs : cases) {
+        emit_label_def(labels[i], s);
+        emit_is_subtype(T1, helper->get_class_tag(expr->get_type()), helper->get_class_tag(cs->get_type_decl()), s);
+        // Jump to the next label if it's not a match.
+        emit_beq(T1, ZERO, labels[i+1], s);
+        scope.enterscope();
+        // Now we assume it is match. We must add the variable to the scope and execute the expression.
+        scope.addid(cs->get_name(), new VariableInfo(stack_offset + 1, cs->get_type_decl(), ScopeType::PARAM));
+        cs->get_expression()->code(helper, scope, s);
+        scope.exitscope();
+        // Now we must jump to the success label.
+        emit_jump_to_label(success_label, s);
+        i++;
+    }
+    // Final label, only used if no cases match.
+    emit_label_def(labels[labels.size() - 1], s);
+    emit_print_error_msg(CASE_ERROR, s);
+    // Exit the program.
+    emit_early_exit(s);
+
+    // We will jump here upon successful completion.
+    emit_label_def(success_label, s);
+
+    // Pop the result of the expression from the stack.
+    emit_pop(s);
+
 }
 
 void block_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
