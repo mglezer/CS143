@@ -24,6 +24,12 @@ class Main {
         "It's main!"
     };
     main(): Int {{
+        let tmp: Int in {
+            tmp <- if isvoid(uninit) then 1 else 0 fi; --should be true
+            io.out_string("Value of tmp: ");
+            io.out_int(tmp);
+            io.out_string("\n");
+        };
         b.get_num();
         num <- case b of
             m: Main => 8;

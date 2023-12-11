@@ -1398,6 +1398,19 @@ void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostrea
 }
 
 void cond_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // First evaluate the expression. The result should be in $a0.
+    pred->code(helper, scope, s);
+    int false_branch = get_unique_label();
+    int end_label = get_unique_label();
+    emit_beqz(ACC, false_branch, s);
+    // Execute the true branch.
+    then_exp->code(helper, scope, s);
+    emit_jump_to_label(end_label, s);
+    // Execute the false branch.
+    emit_label_def(false_branch, s);
+    else_exp->code(helper, scope, s);
+    emit_label_def(end_label, s);
+    // $a0 will contain the result of the executed branch.
 }
 
 void loop_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
@@ -1627,7 +1640,7 @@ void bool_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostr
   emit_load_bool(ACC, BoolConst(val), s);
 }
 
-void new__class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+static void emit_new_object(Symbol type_name, ostream &s) {
     // Store the address of the prototype object in $a0.
     emit_load_address(ACC, get_proto_label(type_name)->c_str(), s);
     // Get a fresh copy of an integer object in $a0.
@@ -1636,7 +1649,25 @@ void new__class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s
     emit_jal(get_init_label(type_name)->c_str(), s);
 }
 
+void new__class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    emit_new_object(type_name, s);
+}
+
 void isvoid_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    int label_void = get_unique_label();
+    int label_after = get_unique_label();
+    // Execute the passed expression. The result is in $a0.
+    e1->code(helper, scope, s);
+    emit_beqz(ACC, label_void, s);
+    emit_load_imm(T1, 0, s);
+    emit_jump_to_label(label_after, s);
+    emit_label_def(label_void, s);
+    emit_load_imm(T1, 1, s);
+    emit_label_def(label_after, s);
+    // After this $a0 will contain the address of the resulting Boolean.
+    emit_new_object(Bool, s);
+    // Set the inner boolean value to $t1, which contains isvoid.
+    emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void no_expr_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
