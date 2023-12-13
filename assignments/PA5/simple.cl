@@ -45,6 +45,15 @@ class Main {
         io.out_string("num = 21? ");
         io.out_int(if num = 21 then 1 else 0 fi);
         io.out_string("\n");
+        io.out_string("num < 21? ");
+        io.out_int(if num < 21 then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("42 < 21? ");
+        io.out_int(if 42 < 21 then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("21 < 42? ");
+        io.out_int(if 21 < 42 then 1 else 0 fi);
+        io.out_string("\n");
         let tmp: Int in {
             tmp <- if isvoid(uninit) then 1 else 0 fi; --should be true
             io.out_string("Value of tmp: ");
