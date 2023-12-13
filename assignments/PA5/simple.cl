@@ -17,6 +17,9 @@ class Main {
     num: Int <- 7 * 3;
     b: B <- new B;
     a: A <- new A;
+    str1: String <- "abc";
+    str2: String <- "abc";
+    str3: String <- "abdefg";
     uninit: B;
     io: IO <- new IO;
     boo: Bool <- true;
@@ -24,6 +27,24 @@ class Main {
         "It's main!"
     };
     main(): Int {{
+        io.out_string("str1 = str2? ");
+        io.out_int(if str1 = str2 then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("str1 = str3? ");
+        io.out_int(if str1 = str3 then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("b = a? ");
+        io.out_int(if b = a then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("b = uninit? ");
+        io.out_int(if b = uninit then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("b = b? ");
+        io.out_int(if b = b then 1 else 0 fi);
+        io.out_string("\n");
+        io.out_string("num = 21? ");
+        io.out_int(if num = 21 then 1 else 0 fi);
+        io.out_string("\n");
         let tmp: Int in {
             tmp <- if isvoid(uninit) then 1 else 0 fi; --should be true
             io.out_string("Value of tmp: ");

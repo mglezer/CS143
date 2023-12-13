@@ -89,6 +89,7 @@
 #define LW    "\tlw\t"
 #define LI    "\tli\t"
 #define LA    "\tla\t"
+#define LB    "\tlb\t"
 
 #define MOVE  "\tmove\t"
 #define NEG   "\tneg\t"

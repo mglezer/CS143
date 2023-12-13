@@ -204,6 +204,12 @@ static void emit_load(char *dest_reg, int offset, char *source_reg, ostream& s)
     << endl;
 }
 
+static void emit_load_byte(char *dest_reg, int offset, char *source_reg, ostream& s)
+{
+  s << LB << dest_reg << " " << offset * WORD_SIZE << "(" << source_reg << ")" 
+    << endl;
+}
+
 static void emit_load_self(char *dst, ostream &s) {
     emit_load(dst, -1, FP, s);
 }
@@ -395,6 +401,16 @@ static void emit_pop(ostream& str)
 {
   stack_offset++;
   emit_addiu(SP,SP,4,str);
+}
+
+// Emits a new object of the given type in $a0.
+static void emit_new_object(Symbol type_name, ostream &s) {
+    // Store the address of the prototype object in $a0.
+    emit_load_address(ACC, get_proto_label(type_name)->c_str(), s);
+    // Get a fresh copy of an integer object in $a0.
+    emit_jal(get_method_label(Object, ::copy)->c_str(), s);
+    // Call the initializer method on the object
+    emit_jal(get_init_label(type_name)->c_str(), s);
 }
 
 static void emit_load_variable_address(char *dst, VariableInfo *var_info, ostream &s) {
@@ -1402,6 +1418,8 @@ void cond_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s
     pred->code(helper, scope, s);
     int false_branch = get_unique_label();
     int end_label = get_unique_label();
+    // Load the raw boolean value into $a0.
+    emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
     emit_beqz(ACC, false_branch, s);
     // Execute the true branch.
     then_exp->code(helper, scope, s);
@@ -1613,7 +1631,119 @@ void neg_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s)
 void lt_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
 }
 
+static void emit_bool(char *src, ostream &s) {
+    // After this $a0 should contain the address of the new object.
+    emit_new_object(Bool, s);
+    emit_store(src, DEFAULT_OBJFIELDS, ACC, s);
+}
+
+// Emits into dst whether $src1 == $src2.
+static void emit_eq(char *dst, char *src1, char* src2, ostream &s) {
+    int true_branch = get_unique_label();
+    int end_label = get_unique_label();
+    emit_beq(src1, src2, true_branch, s);
+    // False case.
+    emit_load_imm(dst, 0, s);
+    emit_jump_to_label(end_label, s);
+    emit_label_def(true_branch, s);
+    // True case.
+    emit_load_imm(dst, 1, s);
+    emit_label_def(end_label, s);
+}
+
+// Emits into dst whether the character sequence starting at address $src1 exactly equals
+// the character string starting at address $src2.
+static void emit_cmp_strs(char *dst, char *src1, char *src2, ostream &s) {
+    int loop_label = get_unique_label();
+    int true_branch = get_unique_label();
+    int false_branch = get_unique_label();
+    int end_label = get_unique_label();
+
+    // Defensively push the addresses to the top of the stack and $a0, respectively.
+    emit_push(src1, s);
+    emit_move(ACC, src2, s);
+
+    emit_label_def(loop_label, s);
+    // Load the first address into $t1.
+    emit_pop(T1, s);
+    // Load the first value into $t2.
+    emit_load_byte(T2, 0, T1, s);
+    // Push the address onto the stack.
+    emit_push(T1, s);
+    // Move the first value to $t1.
+    emit_move(T1, T2, s); 
+    // Load the second value into $t2.
+    emit_load_byte(T2, 0, ACC, s);
+    // Compare $t1 and $t2.
+    emit_bne(T1, T2, false_branch, s);
+    // Check if we have reached the end of the string.
+    emit_beqz(T1, true_branch, s);
+    // Increment the pointers.
+    emit_addiu(ACC, ACC, 1, s);
+    emit_pop(T1, s);
+    emit_addiu(T1, T1, 1, s);
+    emit_push(T1, s);
+    // Repeat.
+    emit_jump_to_label(loop_label, s);
+
+
+    emit_label_def(true_branch, s);
+    emit_load_imm(dst, 1, s);
+    emit_jump_to_label(end_label, s);
+
+    emit_label_def(false_branch, s);
+    emit_load_imm(dst, 0, s);
+
+    emit_label_def(end_label, s);
+    // Pop the first address from the stack. It was never removed earlier.
+    emit_pop(s);
+}
+
+
 void eq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // The result of e1 should be in $a0.
+    e1->code(helper, scope, s);
+    if (e1->get_type() == Int || e1->get_type() == Bool) {
+        assert(e2->get_type() == Int);
+        // $t1 now contains the raw value.
+        emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+        // push $t1 on the stack.
+        emit_push(T1, s);
+        // $a0 now contains the result of the second expression.
+        e2->code(helper, scope, s);
+        emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
+        emit_pop(T1, s);
+        // $t1 will contain the raw boolean of the equality check.
+        emit_eq(T1, T1, ACC, s);
+    } else if (e1->get_type() == Str) {
+        // We need to do a string comparison
+        // Load the raw strings into temporary registers.
+        emit_addiu(T1, ACC, (DEFAULT_OBJFIELDS + 1)*WORD_SIZE, s);
+        emit_push(T1, s);
+        e2->code(helper, scope, s);
+        emit_addiu(ACC, ACC, (DEFAULT_OBJFIELDS + 1)*WORD_SIZE, s);
+        emit_pop(T1, s);
+        // The string pointers are now in $t1 and $a0.
+        emit_cmp_strs(T1, T1, ACC, s);
+    } else {
+        // Push the address of e1 directly onto the stack.
+        emit_push(ACC, s);
+        // Evaluate e2. $a0 contains its result.
+        e2->code(helper, scope, s);
+        // Pop the result of e1 from the stack.
+        emit_pop(T1, s);
+        // Simply compare the values of the pointers.
+        emit_eq(T1, T1, ACC, s);
+    }
+
+    // Store the raw result on the stack.
+    emit_push(T1, s);
+    // After this $a0 should contain the address of the new object.
+    emit_new_object(Bool, s);
+    // Pop the value to use from the stack.
+    emit_pop(T1, s);
+    // Set the correct value to use.
+    emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void leq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
@@ -1638,15 +1768,6 @@ void string_const_class::code(ExpressionHelper *helper, VariableScope &scope, os
 void bool_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostream& s)
 {
   emit_load_bool(ACC, BoolConst(val), s);
-}
-
-static void emit_new_object(Symbol type_name, ostream &s) {
-    // Store the address of the prototype object in $a0.
-    emit_load_address(ACC, get_proto_label(type_name)->c_str(), s);
-    // Get a fresh copy of an integer object in $a0.
-    emit_jal(get_method_label(Object, ::copy)->c_str(), s);
-    // Call the initializer method on the object
-    emit_jal(get_init_label(type_name)->c_str(), s);
 }
 
 void new__class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
