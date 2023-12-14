@@ -33,6 +33,18 @@ class Main {
         io.out_string("\n")
     };
     main(): Int {{
+        io.out_string("4 - 5 = ");
+        io.out_int(4 - 5);
+        new_line();
+        io.out_string("~5 + 4 = ");
+        io.out_int(~5 + 4);
+        new_line();
+        io.out_string("~5 + 5 = ");
+        io.out_int(~5 + 5);
+        new_line();
+        io.out_string("~5 - 5 = ");
+        io.out_int(~5 - 5);
+        new_line();
         io.out_string("~false? ");
         out_bool(not false);
         new_line();

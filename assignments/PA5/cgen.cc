@@ -378,6 +378,10 @@ static void emit_and(char *dst, char *src1, char *src2, ostream &s) {
     s << AND << dst << " " << src1 << " " << src2 << endl;
 }
 
+static void emit_not(char *dst, char *src, ostream &s) {
+    s << NOT << dst << " " << src << endl;
+}
+
 //
 // Push a register on the stack. The stack grows towards smaller addresses.
 //
@@ -1630,6 +1634,23 @@ void divide_class::code(ExpressionHelper *helper, VariableScope &scope, ostream 
 }
 
 void neg_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // Two's complement negation: logical NOT + 1.
+    // Evaluate the expression. The result should be in $a0.
+    e1->code(helper, scope, s);
+    // Load the raw integer value.
+    emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
+    // Negate the result.
+    emit_not(ACC, ACC, s);
+    // Add 1.
+    emit_addiu(ACC, ACC, 1, s);
+    // Store the result on the stack.
+    emit_push(ACC, s);
+    // Create a new Int.
+    emit_new_object(Int, s);
+    // Pop the value from the stack into $t1.
+    emit_pop(T1, s);
+    // Update the value of the returned Int.
+    emit_store_int(T1, ACC, s);
 }
 
 void lt_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
