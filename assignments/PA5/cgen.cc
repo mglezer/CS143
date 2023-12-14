@@ -1084,11 +1084,13 @@ void CgenClassTable::generate_proto_objects() {
 
         str << *get_proto_label(curr_class->get_name()) << LABEL
             << WORD << tag << endl  // class tag
-            << WORD <<  DEFAULT_OBJFIELDS + curr_class->get_variable_scope().count() << endl   // object size
+            << WORD <<  DEFAULT_OBJFIELDS + (curr_class->get_variable_scope().count() - 1) << endl   // object size, excluding self
             << WORD << *get_dispatch_label(curr_class->get_name()) << endl;
 
         std::list<SymtabEntry<Symbol, VariableInfo>*> *entries = curr_class->get_variable_scope().all_flattened_entries();
         for (const auto &entry : *entries) {
+            // Exclude self
+            if (entry->get_id() == self) continue;
             CgenNode *attr_cls = lookup(entry->get_info()->get_type());
             assert(attr_cls != NULL);
             write_default_value_for_attr(attr_cls, str);
@@ -1172,11 +1174,8 @@ void CgenNode::generate_class_methods(CgenClassTable *table, ostream &str) {
         scope.enterscope();
         for (int i = method->formals->first(); method->formals->more(i); i = method->formals->next(i)) {
             Formal_class *formal = method->formals->nth(i);
-            scope.addid(formal->get_name(), new VariableInfo(i, formal->get_type_decl(), ScopeType::PARAM));
+            scope.addid(formal->get_name(), new VariableInfo(method->formals->len() - 1 - i, formal->get_type_decl(), ScopeType::PARAM));
         }
-        // Bound self to the class, treating it as another parameter.
-        // The offset is -1 wrt the frame pointer.
-        scope.addid(self, new VariableInfo(-1, name, ScopeType::PARAM));
 
         // Save the callee-saved registers on the stack.
         setup_activation_record_for_callee(str);
@@ -1242,17 +1241,19 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
             assert(false);
         }
         VariableInfo *existing_offset = variable_scope->lookup(name);
-        int offset;
-        if (!existing_offset) {
-            variable_scope->addid(name, new VariableInfo(
-                        get_and_increment_attr_offset(), attr->type_decl, ScopeType::ATTRIBUTE));
-        }
+        // It is illegal for an attribute to be defined twice in a class lineage.
+        assert(existing_offset == NULL);
+        variable_scope->addid(name, new VariableInfo(
+                    get_and_increment_attr_offset(), attr->type_decl, ScopeType::ATTRIBUTE));
     }
 
     // Create independent copies.
     this->method_indices = *method_indices; 
     this->variable_scope = *variable_scope; 
     this->method_impls = *method_impls; 
+
+    // Add self to the scope.
+    this->variable_scope.addid(self, new VariableInfo(-1, name, ScopeType::PARAM));
 
     return std::pair<int, int>(next_method_index, next_attr_offset);
 }
@@ -1362,13 +1363,15 @@ void static_dispatch_class::code(ExpressionHelper *helper, VariableScope &scope,
     int n = actual->len();
     if (n > 0) {
         // Allocate space on the stack for the additional arguments.
+        // Note that stack_offset is not modified here, because control is about to be given up
+        // to the caller, and the caller will restore the stack exactly as it was.
         emit_addiu(SP, SP, -4*n, s);
         for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
             Expression expr = actual->nth(i);
             expr->code(helper, scope, s);
             // Store the result in $a0 at the corresponding offset in the stack.
             // Skip over the empty value.
-            emit_store(ACC, 1 + i, SP, s);
+            emit_store(ACC, actual->len() - i, SP, s);
         }
     }
     if (expr->is_empty()) {
@@ -1398,7 +1401,7 @@ void dispatch_class::code(ExpressionHelper *helper, VariableScope &scope, ostrea
             expr->code(helper, scope, s);
             // Store the result in $a0 at the corresponding offset in the stack.
             // Skip over the empty value.
-            emit_store(ACC, 1 + i, SP, s);
+            emit_store(ACC, actual->len() - i, SP, s);
         }
     }
     if (expr->is_empty()) {
