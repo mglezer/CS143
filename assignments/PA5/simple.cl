@@ -26,7 +26,19 @@ class Main {
     utterNoise(): String {
         "It's main!"
     };
+    out_bool(b: Bool): Object {
+        io.out_int(if b then 1 else 0 fi)
+    };
+    new_line(): Object {
+        io.out_string("\n")
+    };
     main(): Int {{
+        io.out_string("~false? ");
+        out_bool(not false);
+        new_line();
+        io.out_string("~true? ");
+        out_bool(not true);
+        new_line();
         io.out_string("str1 = str2? ");
         io.out_int(if str1 = str2 then 1 else 0 fi);
         io.out_string("\n");

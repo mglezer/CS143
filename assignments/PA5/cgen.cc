@@ -374,6 +374,10 @@ static void emit_branch(int l, ostream& s)
   s << endl;
 }
 
+static void emit_and(char *dst, char *src1, char *src2, ostream &s) {
+    s << AND << dst << " " << src1 << " " << src2 << endl;
+}
+
 //
 // Push a register on the stack. The stack grows towards smaller addresses.
 //
@@ -1771,6 +1775,24 @@ void leq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s)
 }
 
 void comp_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // Evaluate the expression; the result should be in $a0.
+    e1->code(helper, scope, s);
+    // Get the raw boolean value in $a0.
+    emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
+    // Add 1.
+    emit_addiu(ACC, ACC, 1, s);
+    // Store 0x1 (the mask) in $t1.
+    emit_load_imm(T1, 0x1, s);
+    // Mask everything but the ones digit.
+    emit_and(ACC, ACC, T1, s);
+    // Save the value on the stack.
+    emit_push(ACC, s);
+    // Create a new Boolean object; its address is in $a0.
+    emit_new_object(Bool, s);
+    // Pop the negated value into $t1.
+    emit_pop(T1, s);
+    // Store the new value.
+    emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void int_const_class::code(ExpressionHelper *helper, VariableScope &scope, ostream& s)  
