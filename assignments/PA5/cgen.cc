@@ -1772,6 +1772,34 @@ void eq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) 
 }
 
 void leq_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
+    // The result of the first expression is in $a0.
+    e1->code(helper, scope, s);
+    // Load the raw integer value into $a0.
+    emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
+    // Store the value on the stack.
+    emit_push(ACC, s);
+    // Execute the second expression. The result is in $a0.
+    e2->code(helper, scope, s);
+    // Load the raw value into $a0.
+    emit_load(ACC, DEFAULT_OBJFIELDS, ACC, s);
+    // Pop the result of the first expression into $t1.
+    emit_pop(T1, s);
+    int true_branch = get_unique_label();
+    int end_label = get_unique_label();
+    emit_blt(T1, ACC, true_branch, s);
+    emit_beq(T1, ACC, true_branch, s);
+    // false case
+    emit_load_imm(T1, 0, s);
+    emit_jump_to_label(end_label, s);
+    emit_label_def(true_branch, s);
+    emit_load_imm(T1, 1, s);
+    emit_label_def(end_label, s);
+    // Store the raw value on the stack.
+    emit_push(T1, s);
+    // $a0 contains the new Bool object.
+    emit_new_object(Bool, s);
+    emit_pop(T1, s);
+    emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void comp_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
