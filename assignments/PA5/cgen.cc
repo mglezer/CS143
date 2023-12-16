@@ -1462,14 +1462,19 @@ void loop_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s
     emit_load_imm(ACC, 0, s);
 }
 
-// Stores in the destination register whether type A is a subtype of type B.
-static void emit_is_subtype(char *dst, int tag_a, int tag_b, ostream &s) {
+// Stores in $a0 whether the class of the object addressed by the top of the stack
+// is a subtype of type B.
+static void code_is_subtype(int tag_b, ostream &s) {
     int label_true = get_unique_label();
     int label_false = get_unique_label();
     int label_end = get_unique_label();
     int label_loop = get_unique_label();
 
-    emit_load_imm(T1, tag_a, s);
+    // Load the address of the class.
+    emit_load(T1, 1, SP, s);
+    // Load the class tag of the class.
+    emit_load(T1, 0, T1, s);
+
     emit_load_imm(T2, tag_b, s);
 
     // Loop
@@ -1497,12 +1502,12 @@ static void emit_is_subtype(char *dst, int tag_a, int tag_b, ostream &s) {
 
     // Jump here in the false case.
     emit_label_def(label_false, s);
-    emit_load_imm(dst, 0, s);
+    emit_load_imm(ACC, 0, s);
     emit_jump_to_label(label_end, s);
 
     // Jump here in the true case.
     emit_label_def(label_true, s);
-    emit_load_imm(dst, 1, s);
+    emit_load_imm(ACC, 1, s);
 
     // End here.
     emit_label_def(label_end, s);
@@ -1538,9 +1543,10 @@ void typcase_class::code(ExpressionHelper *helper, VariableScope &scope, ostream
     int i = 0;
     for (const auto &cs : cases) {
         emit_label_def(labels[i], s);
-        emit_is_subtype(T1, helper->get_class_tag(expr->get_type()), helper->get_class_tag(cs->get_type_decl()), s);
+        // Whether the expression at the top of the stack is a subtype is stored in $a0.
+        code_is_subtype(helper->get_class_tag(cs->get_type_decl()), s);
         // Jump to the next label if it's not a match.
-        emit_beq(T1, ZERO, labels[i+1], s);
+        emit_beq(ACC, ZERO, labels[i+1], s);
         scope.enterscope();
         // Now we assume it is match. We must add the variable to the scope and execute the expression.
         scope.addid(cs->get_name(), new VariableInfo(stack_offset + 1, cs->get_type_decl(), ScopeType::PARAM));
