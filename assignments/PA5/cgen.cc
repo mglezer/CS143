@@ -1125,7 +1125,7 @@ void CgenClassTable::generate_init_method(CgenNode *cls) {
     for (const auto &attr : attrs) {
         Expression expr = attr->get_init();
         VariableScope scope = cls->get_variable_scope();
-        VariableInfo *attr_info = scope.lookup(attr->name);
+        VariableInfo *attr_info = scope.probe(attr->name);
         assert(attr_info != NULL);
 
         if (!expr->is_empty()) {
