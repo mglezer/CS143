@@ -1627,7 +1627,7 @@ static void emit_arith(void (*emit_binary_op)(char*,char*,char*,ostream &s), Bin
 }
 
 void plus_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
-    emit_arith(emit_addu, this, helper, scope, s);
+    emit_arith(emit_add, this, helper, scope, s);
 }
 
 void sub_class::code(ExpressionHelper *helper, VariableScope &scope, ostream &s) {
