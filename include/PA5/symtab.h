@@ -176,15 +176,6 @@ public:
       return list;
    }
 
-   std::list<ScopeEntry*> *top_flattened_entries() {
-       std::list<ScopeEntry*> *list = new std::list<ScopeEntry *>();
-         for(Scope *j = tbl->hd(); j != NULL; j = j->tl()) {
-             // Reverse order, so the most recent elements come last.
-             list->push_front(j->hd());
-         }
-      return list;
-   }
-
    int count() {
        int count = 0;
        for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
