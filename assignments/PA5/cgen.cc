@@ -1047,18 +1047,26 @@ void CgenClassTable::generate_dispatch_tables() {
 
 void CgenNode::generate_dispatch_table(ostream &s) {
     s << name << DISPTAB_SUFFIX << LABEL;
-    std::list<SymtabEntry<Symbol, int>*> *entries = method_indices.all_flattened_entries();
-    for (const auto &entry : *entries) {
-        s << WORD << *method_impls.lookup(entry->get_id()) << endl;
+    std::list<Symbol> methods;
+    // Reverse the list since it is itself in reverse order.
+    while (method_list != NULL) {
+        methods.push_front(method_list->hd());
+        method_list = method_list->tl();
+    }
+    for (const auto &method : methods) {
+        s << WORD << *method_impls.lookup(method) << endl;
     }
 }
 
 void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index, int starting_attr_offset)
 {
+    List<Entry> *old_attr_list = attr_list;
+    List<Entry> *old_method_list = method_list;
     method_indices.enterscope();
     variable_scope.enterscope();
     method_impls.enterscope();
-    std::pair<int, int> pair = curr->determine_offsets(&method_indices, &method_impls, &variable_scope, starting_method_index, starting_attr_offset);
+    // Preserve the old list values.
+    std::pair<int, int> pair = curr->determine_offsets(&method_indices, &method_impls, &variable_scope, &attr_list, &method_list, starting_method_index, starting_attr_offset);
     starting_method_index = pair.first;
     starting_attr_offset = pair.second;
     List<CgenNode> *child = curr->get_children();
@@ -1069,6 +1077,8 @@ void CgenClassTable::determine_offsets(CgenNodeP curr, int starting_method_index
     method_impls.exitscope();
     method_indices.exitscope();
     variable_scope.exitscope();
+    attr_list = old_attr_list;
+    method_list = old_method_list;
 }
 
 
@@ -1084,14 +1094,18 @@ void CgenClassTable::generate_proto_objects() {
 
         str << *get_proto_label(curr_class->get_name()) << LABEL
             << WORD << tag << endl  // class tag
-            << WORD <<  DEFAULT_OBJFIELDS + (curr_class->get_variable_scope().count() - 1) << endl   // object size, excluding self
+            << WORD <<  DEFAULT_OBJFIELDS + list_length(curr_class->get_attr_list()) << endl
             << WORD << *get_dispatch_label(curr_class->get_name()) << endl;
 
-        std::list<SymtabEntry<Symbol, VariableInfo>*> *entries = curr_class->get_variable_scope().all_flattened_entries();
-        for (const auto &entry : *entries) {
-            // Exclude self
-            if (entry->get_id() == self) continue;
-            CgenNode *attr_cls = lookup(entry->get_info()->get_type());
+        std::list<Symbol> attrs;
+        List<Entry> *attr_list = curr_class->get_attr_list();
+        while (attr_list != NULL) {
+            attrs.push_front(attr_list->hd());
+            attr_list = attr_list->tl();
+        }
+        for (const auto &attr : attrs) {
+            curr_class->get_variable_scope().dump();
+            CgenNode *attr_cls = lookup(curr_class->get_variable_scope().lookup(attr)->get_type());
             assert(attr_cls != NULL);
             write_default_value_for_attr(attr_cls, str);
         }
@@ -1215,7 +1229,7 @@ std::string *to_method_label(class__class *clz, method_class *method) {
     return new std::string(std::string(clz->get_name()->get_string()) + "." + std::string(method->get_name()->get_string()));
 }
 
-std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, int starting_method_index, int starting_attr_offset) {
+std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, List<Entry> **attr_list, List<Entry> **method_list, int starting_method_index, int starting_attr_offset) {
     // Initialize the offsets so we start where the parent class left off.
     this->next_method_index = starting_method_index;
     this->next_attr_offset = starting_attr_offset;
@@ -1229,6 +1243,7 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
         int *existing_index = method_indices->lookup(name);
         if (!existing_index) {
             method_indices->addid(name, new int(get_and_increment_method_index()));
+            *method_list = new List(name, *method_list);
         }
         // Unlike the method index, the method label will get overridden if there is an overriding
         // implementation in a child class.
@@ -1245,12 +1260,16 @@ std::pair<int, int> CgenNode::determine_offsets(MethodIdxTable *method_indices, 
         assert(existing_offset == NULL);
         variable_scope->addid(name, new VariableInfo(
                     get_and_increment_attr_offset(), attr->type_decl, ScopeType::ATTRIBUTE));
+
+        *attr_list = new List(name, *attr_list);
     }
 
     // Create independent copies.
     this->method_indices = *method_indices; 
     this->variable_scope = *variable_scope; 
     this->method_impls = *method_impls; 
+    this->method_list = *method_list;
+    this->attr_list = *attr_list;
 
     // Add self to the scope.
     this->variable_scope.addid(self, new VariableInfo(-1, name, ScopeType::PARAM));
@@ -1274,6 +1293,7 @@ void CgenClassTable::code()
   generate_class_name_table();
   generate_class_object_table();
   generate_dispatch_tables();
+  if (cgen_debug) cout << "generating proto objects" << endl;
   generate_proto_objects();
 
   if (cgen_debug) cout << "coding global text" << endl;

@@ -28,6 +28,8 @@ private:
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
    VariableScope variable_scope;
+   List<Entry> *attr_list;
+   List<Entry> *method_list;
    std::vector<CgenNode *> class_tag_table;
 
 
@@ -88,6 +90,8 @@ private:
    MethodIdxTable method_indices;
    MethodImplTable method_impls;
    VariableScope variable_scope;
+   List<Entry> *attr_list;
+   List<Entry> *method_list;
 
 public:
    CgenNode(Class_ c,
@@ -99,7 +103,7 @@ public:
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
-   std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, int starting_method_index, int starting_attr_offset);
+   std::pair<int, int> determine_offsets(MethodIdxTable *method_indices, MethodImplTable *method_impls, VariableScope *variable_scope, List<Entry> **attr_list, List<Entry> **method_list, int starting_method_index, int starting_attr_offset);
    int get_and_increment_method_index() { return next_method_index++; }
    int get_and_increment_attr_offset() { return next_attr_offset++; }
    void generate_dispatch_table(ostream &s);
@@ -112,6 +116,9 @@ public:
 
    VariableScope get_variable_scope() {
        return variable_scope;
+   }
+   List<Entry> *get_attr_list() {
+       return attr_list;
    }
    int get_method_idx(Symbol method) {
        int *val = method_indices.lookup(method);

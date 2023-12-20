@@ -160,33 +160,10 @@ public:
       for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
          cerr << "\nScope: \n";
          for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
-            cerr << "  " << j->hd()->get_id() << " " << *(j->hd()->get_info()) << endl;
+            cerr << "  " << j->hd()->get_id() << endl;
          }
       }
    }
-
-   std::list<ScopeEntry*> *all_flattened_entries() {
-       std::list<ScopeEntry*> *list = new std::list<ScopeEntry *>();
-      for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
-         for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
-             // Reverse order, so the most recent elements come last.
-             list->push_front(j->hd());
-         }
-      }
-      return list;
-   }
-
-   int count() {
-       int count = 0;
-       for(ScopeList *i = tbl; i != NULL; i = i->tl()) {
-           for(Scope *j = i->hd(); j != NULL; j = j->tl()) {
-               count++;
-           }
-       }
-       return count;
-   }
-
- 
 };
 
 #endif
